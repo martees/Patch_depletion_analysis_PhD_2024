@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from skimage import exposure
 
+
 # Paths to find images and empty field image, and path to output assembled images
 path = "/home/admin/Desktop/Patch_depletion/Microscope/20240125_1patch1worm_0.209od_5x_4s_20w4000ms_8h_plate/TIFF/"
 image_path_list = sorted(glob.glob(path + "*.tif", recursive=False))

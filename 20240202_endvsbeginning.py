@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 
+
 # Paths to find images
 path = "/media/admin/LaCie/Data/MicroMonitWorm/depletion_pilots/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
 image_path_list = sorted(glob.glob(path + "*.tif", recursive=False))

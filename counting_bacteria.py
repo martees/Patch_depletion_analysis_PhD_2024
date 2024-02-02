@@ -2,6 +2,7 @@ import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 
+
 image_path = "/home/admin/Desktop/Patch_depletion/Microscope/2023_12_12_OP50GFP_Patches_microscope/"
 image = cv2.imread(image_path+"231212_OD0_2_x10_10gfp4s_slide_2-01-Image Export-01.tif")
 
