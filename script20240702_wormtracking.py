@@ -47,7 +47,13 @@ def track_worm(image_list):
 
         silhouette_list.append(labels)
 
-    return trajectory_x, trajectory_y, silhouette_list
+    # Remove from the trajectories the points where the worm was not tracked
+    trajectory_x = trajectory_x[is_worm_tracked]
+    trajectory_y = trajectory_y[is_worm_tracked]
+    # Create a list of time stamps that correspond to the frame numbers of the tracked frames
+    time_stamps = np.array(range(len(image_list)))[is_worm_tracked]
+
+    return time_stamps, trajectory_x, trajectory_y, silhouette_list
 
 
 def interactive_worm_plot(image_list, centroids_x, centroids_y, silhouettes):
@@ -136,22 +142,31 @@ def update_frame(image_list, list_of_silhouettes, list_centroids_x, list_centroi
     curr_fig.canvas.draw()
 
 
-# Load the images into a list of arrays
-image_path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
-image_path_list = sorted(glob.glob(image_path + "*.tif", recursive=False))
-image_path_list = image_path_list[400:]
-list_of_images = []
-for i_image in range(len(image_path_list)):
-    if i_image % 4 == 2:
-        image = cv2.imread(image_path_list[i_image], -1)  # -1 is to load them without converting them to 8bit
-        # Convert image to 8 bit depth
-        ratio = np.amax(image) / 256
-        image = (image / ratio).astype('uint8')
-        list_of_images.append(image)
+def generate_tracking(image_path):
+    # Load the images into a list of arrays
+    image_path_list = sorted(glob.glob(image_path + "*.tif", recursive=False))
+    image_path_list = image_path_list[400:]
+    list_of_images = []
+    for i_image in range(len(image_path_list)):
+        if i_image % 4 == 2:
+            image = cv2.imread(image_path_list[i_image], -1)  # -1 is to load them without converting them to 8bit
+            # Convert image to 8 bit depth
+            ratio = np.amax(image) / 256
+            image = (image / ratio).astype('uint8')
+            list_of_images.append(image)
 
-list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
+    time_stamps, list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
 
-interactive_worm_plot(list_of_images[1:], list_positions_x, list_positions_y, silhouettes)
+    np.save(image_path+"list_tracked_frame_numbers.npy", time_stamps)
+    np.save(image_path+"list_positions_x.npy", list_positions_x)
+    np.save(image_path+"list_positions_y.npy", list_positions_y)
+    np.save(image_path+"silhouettes.npy", silhouettes)
+
+
+path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
+generate_tracking(path)
+
+# interactive_worm_plot(list_of_images[1:], list_positions_x, list_positions_y, silhouettes)
 
 # fig, axs = plt.subplots(1, 2)
 #
