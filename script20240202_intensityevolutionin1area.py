@@ -428,9 +428,6 @@ def find_non_visited_sites(silhouettes, dilation_radius, site_size):
     silhouettes_all_times = np.sum(silhouettes, axis=0)
 
 
-
-
-
 def find_best_normalization(image_list, x_range, y_range, silhouettes):
     """
     Takes a list of images, an x and y range on that image (in the format of a list: x_range could be [100, 200]),
