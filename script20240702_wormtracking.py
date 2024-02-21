@@ -4,6 +4,8 @@ import numpy as np
 import glob
 import script20240202_intensityevolutionin1area as intensity_ev
 from matplotlib.widgets import Slider
+import useful_functions
+import script202402_fuseimagesoverlap as fuse_images
 
 
 def track_worm(image_list):
@@ -14,7 +16,7 @@ def track_worm(image_list):
     # List of x and y coordinates for the worm centroid at each time point
     trajectory_x = np.zeros(len(image_list))
     trajectory_y = np.zeros(len(image_list))
-    # List of pixelwise tracking output for each time point
+    # List of pixel-wise tracking output for each time point
     silhouette_list = []
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(10, 10))
     is_worm_tracked = [True for _ in range(len(image_list))]
@@ -36,7 +38,8 @@ def track_worm(image_list):
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
 
         # Check if this frame has only one blob (so only the background, no worm detected, and remember that)
-        is_worm_tracked[i_frame] = False
+        if num_blobs == 1:
+            is_worm_tracked[i_frame] = False
 
         # Exclude first blob (background) and make a centroid of the centroids
         centroids = centroids[1:]
@@ -53,7 +56,7 @@ def track_worm(image_list):
     # Create a list of time stamps that correspond to the frame numbers of the tracked frames
     time_stamps = np.array(range(len(image_list)))[is_worm_tracked]
 
-    return time_stamps, trajectory_x, trajectory_y, silhouette_list
+    return time_stamps, trajectory_x, trajectory_y, silhouette_list, is_worm_tracked
 
 
 def interactive_worm_plot(image_list, centroids_x, centroids_y, silhouettes):
@@ -68,7 +71,7 @@ def interactive_worm_plot(image_list, centroids_x, centroids_y, silhouettes):
     global left_ax
     global right_ax
     fig, [left_ax, right_ax] = plt.subplots(1, 2)
-    #fig.set_size_inches(25, 5)
+    # fig.set_size_inches(25, 5)
 
     # Define time counter (will be incremented/decremented depending on what user does)
     global curr_time
@@ -143,28 +146,44 @@ def update_frame(image_list, list_of_silhouettes, list_centroids_x, list_centroi
 
 
 def generate_tracking(image_path):
-    # Load the images into a list of arrays
+    # Find the path of all the images
     image_path_list = sorted(glob.glob(image_path + "*.tif", recursive=False))
     image_path_list = image_path_list[400:]
     list_of_images = []
-    for i_image in range(len(image_path_list)):
-        if i_image % 4 == 2:
-            image = cv2.imread(image_path_list[i_image], -1)  # -1 is to load them without converting them to 8bit
-            # Convert image to 8 bit depth
-            ratio = np.amax(image) / 256
-            image = (image / ratio).astype('uint8')
-            list_of_images.append(image)
+    if not useful_functions.is_linux():  # On windows the glob output uses \\ as separators so remove that
+        image_path_list = [name.replace("\\", '/') for name in image_path_list]
 
-    time_stamps, list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
+    # Load the images into a list of arrays, assembling them 4 by 4 (see description of fuse_images_overlap())
+    for i_image in range(len(image_path_list)//4):
+        current_image_paths = [image_path_list[i_image+i] for i in [0, 1, 2, 3]]
+        current_image_list = [[], [], [], []]
+        for i_tile in range(len(current_image_paths)):
+            current_image_list[i_tile] = cv2.imread(current_image_paths[i_tile], -1)
+        image = fuse_images.fuse_images_overlap(current_image_list)
+
+        #if i_image % 4 == 2:
+        #    image = cv2.imread(image_path_list[i_image], -1)  # -1 is to load them without converting them to 8bit
+        #    # Convert image to 8 bit depth
+        #    ratio = np.amax(image) / 256
+        #    image = (image / ratio).astype('uint8')
+        list_of_images.append(image)
+
+    time_stamps, list_positions_x, list_positions_y, silhouettes, is_worm_tracked = track_worm(list_of_images)
 
     np.save(image_path+"list_tracked_frame_numbers.npy", time_stamps)
     np.save(image_path+"list_positions_x.npy", list_positions_x)
     np.save(image_path+"list_positions_y.npy", list_positions_y)
     np.save(image_path+"silhouettes.npy", silhouettes)
+    np.save(image_path+"is_worm_tracked.npy", is_worm_tracked)
 
 
-path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
+if useful_functions.is_linux():
+    path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
+else:
+    path = 'C:/Users/Asmar/Desktop/These/Patch_depletion/test_pipeline/20243101_OD0.2oldbact10gfp4s_Lsomethingworm_dishupsidedown-02/'
+
 generate_tracking(path)
+print("hihi")
 
 # interactive_worm_plot(list_of_images[1:], list_positions_x, list_positions_y, silhouettes)
 
