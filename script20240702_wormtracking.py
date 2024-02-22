@@ -140,7 +140,7 @@ def update_frame(image_list, list_of_silhouettes, list_centroids_x, list_centroi
     right_ax.cla()
     right_ax.imshow(list_of_silhouettes[index])
     right_ax.scatter(list_centroids_x[index], list_centroids_y[index], color="red")
-    right_ax.set_title("Current frame: "+str(index))
+    right_ax.set_title("Current frame: " + str(index))
     curr_fig = plt.gcf()
     curr_fig.canvas.draw()
 
@@ -154,14 +154,14 @@ def generate_tracking(image_path):
         image_path_list = [name.replace("\\", '/') for name in image_path_list]
 
     # Load the images into a list of arrays, assembling them 4 by 4 (see description of fuse_images_overlap())
-    for i_image in range(len(image_path_list)//4):
-        current_image_paths = [image_path_list[i_image+i] for i in [0, 1, 2, 3]]
+    for i_image in range(len(image_path_list) // 4):
+        current_image_paths = [image_path_list[i_image + i] for i in [0, 1, 2, 3]]
         current_image_list = [[], [], [], []]
         for i_tile in range(len(current_image_paths)):
             current_image_list[i_tile] = cv2.imread(current_image_paths[i_tile], -1)
         image = fuse_images.fuse_images_overlap(current_image_list)
 
-        #if i_image % 4 == 2:
+        # if i_image % 4 == 2:
         #    image = cv2.imread(image_path_list[i_image], -1)  # -1 is to load them without converting them to 8bit
         #    # Convert image to 8 bit depth
         #    ratio = np.amax(image) / 256
@@ -170,11 +170,11 @@ def generate_tracking(image_path):
 
     time_stamps, list_positions_x, list_positions_y, silhouettes, is_worm_tracked = track_worm(list_of_images)
 
-    np.save(image_path+"list_tracked_frame_numbers.npy", time_stamps)
-    np.save(image_path+"list_positions_x.npy", list_positions_x)
-    np.save(image_path+"list_positions_y.npy", list_positions_y)
-    np.save(image_path+"silhouettes.npy", silhouettes)
-    np.save(image_path+"is_worm_tracked.npy", is_worm_tracked)
+    np.save(image_path + "list_tracked_frame_numbers.npy", time_stamps)
+    np.save(image_path + "list_positions_x.npy", list_positions_x)
+    np.save(image_path + "list_positions_y.npy", list_positions_y)
+    np.save(image_path + "silhouettes.npy", silhouettes)
+    np.save(image_path + "is_worm_tracked.npy", is_worm_tracked)
 
 
 if useful_functions.is_linux():
