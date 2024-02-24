@@ -56,7 +56,7 @@ def track_worm(image_list):
     # Create a list of time stamps that correspond to the frame numbers of the tracked frames
     time_stamps = np.array(range(len(image_list)))[is_worm_tracked]
 
-    return time_stamps, trajectory_x, trajectory_y, silhouette_list, is_worm_tracked
+    return time_stamps, trajectory_x, trajectory_y, silhouette_list
 
 
 def interactive_worm_plot(image_list, centroids_x, centroids_y, silhouettes):
@@ -160,21 +160,14 @@ def generate_tracking(image_path):
         for i_tile in range(len(current_image_paths)):
             current_image_list[i_tile] = cv2.imread(current_image_paths[i_tile], -1)
         image = fuse_images.fuse_images_overlap(current_image_list)
-
-        # if i_image % 4 == 2:
-        #    image = cv2.imread(image_path_list[i_image], -1)  # -1 is to load them without converting them to 8bit
-        #    # Convert image to 8 bit depth
-        #    ratio = np.amax(image) / 256
-        #    image = (image / ratio).astype('uint8')
         list_of_images.append(image)
 
-    time_stamps, list_positions_x, list_positions_y, silhouettes, is_worm_tracked = track_worm(list_of_images)
+    time_stamps, list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
 
     np.save(image_path + "list_tracked_frame_numbers.npy", time_stamps)
     np.save(image_path + "list_positions_x.npy", list_positions_x)
     np.save(image_path + "list_positions_y.npy", list_positions_y)
     np.save(image_path + "silhouettes.npy", silhouettes)
-    np.save(image_path + "is_worm_tracked.npy", is_worm_tracked)
 
 
 if useful_functions.is_linux():
