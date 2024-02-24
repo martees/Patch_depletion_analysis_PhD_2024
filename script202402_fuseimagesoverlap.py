@@ -68,7 +68,7 @@ def fuse_images_overlap(images, overlap=0.3):
     return final_image
 
 
-def fuse_margins(margins, final_min, final_median, final_type=np.uint8):
+def fuse_margins(margins, final_min, final_median, final_type=np.uint16):
     # Average all the margins
     final_margin = np.mean(margins, axis=0)
     # Align left bound of hist to final min
