@@ -57,10 +57,10 @@ def interactive_worm_plot(image_list, full_images, timestamps, centroids_x, cent
     fig.canvas.mpl_connect('scroll_event', scroll_event)
 
     # Create a slider
-    global bottom_axlist_t
+    global bottom_ax
     fig = plt.gcf()
     bottom_ax = fig.add_axes([0.25, 0.1, 0.65, 0.03])
-    frame_slider = Slider(bottom_ax, 'Time', 0, len(image_list), valinit=0, color="green")
+    frame_slider = Slider(bottom_ax, 'Time', 0, len(full_images), valinit=0, color="green")
     plt.subplots_adjust(left=0.25, bottom=.2, right=None, top=.9, wspace=.2, hspace=.2)
 
     # Slider update function
