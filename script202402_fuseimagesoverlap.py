@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 
 
-def fuse_images_overlap(images, overlap=0.3):
+def fuse_images_overlap_2x2(images, overlap=0.3):
     """
     Takes a list of 4 images that correspond to 4 corners of the same thing, in the following order:
     [upper left, upper right, lower right, lower left]
@@ -16,7 +16,7 @@ def fuse_images_overlap(images, overlap=0.3):
     y_len, x_len = images[0].shape
     y_margin = np.round(y_len * overlap).astype(int)
     x_margin = np.round(x_len * overlap).astype(int)
-    # Length of the overlap between the images (x and y)
+    # Length of the non-overlapping sections of the images (x and y)
     y_small_len, x_small_len = y_len - y_margin, x_len - x_margin
 
     # Slice the images to get only the margins (so 2 values for every pixel in 4 margins, 4 values in the center)
@@ -45,8 +45,8 @@ def fuse_images_overlap(images, overlap=0.3):
     final_image[-y_small_len:, :x_small_len] = images[3][-y_small_len:, :x_small_len]
 
     # Define median and minimal intensity value of this image to adjust those for the margins
-    final_median = np.median(final_image[final_image > 0])
-    final_min = np.quantile(final_image[final_image > 0], 0.01)
+    final_median = np.median(final_image[final_image >= 0])
+    final_min = np.quantile(final_image[final_image >= 0], 0.01)
 
     # "Fuse" the margins that overlap, with the goal median and minimum values
     top_margin = fuse_margins([top_margin_from_left, top_margin_from_right], final_min, final_median)
@@ -97,7 +97,7 @@ if __name__ == "__main__":
         # image_name = image_names[i]
         image = cv2.imread(image_name, -1)
         image_list.append(image)
-    full_image = fuse_images_overlap(image_list, overlap=0.3)
+    full_image = fuse_images_overlap_2x2(image_list, overlap=0.3)
 
     from matplotlib import pyplot as plt
     plt.imshow(full_image, vmin=400, vmax=1000)
