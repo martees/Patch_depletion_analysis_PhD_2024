@@ -32,22 +32,23 @@ def track_worm(image_list):
     trajectory_y = np.zeros(len(image_list))
     # List of pixel-wise tracking output for each time point
     silhouette_list = []
-    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(16, 16))
+    erosion_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(8, 8))
+    dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(128, 128))
     is_worm_tracked = [True for _ in range(len(image_list))]
     for i_frame in range(len(image_list)):
         # Background subtraction: average the last 10 frames and subtract this to current frame to get the worm
         if i_frame == 0:  # treating frame 0 differently because there are no previous frame for subtraction
-            last_10_frames = image_list[i_frame]
-            last_10_diff = image_list[i_frame] - last_10_frames
+            last_20_frames = image_list[i_frame]
+            last_20_diff = image_list[i_frame] - last_20_frames
         else:
-            last_10_frames = np.mean([image_list[j] for j in range(max(0, i_frame - 10), i_frame)], axis=0)
-            last_10_diff = image_list[i_frame] - last_10_frames
+            last_20_frames = np.mean([image_list[j] for j in range(max(0, i_frame - 20), i_frame)], axis=0)
+            last_20_diff = image_list[i_frame] - last_20_frames
 
         # Threshold the highest value pixels to get the worm blob
-        _, image_thresh = cv2.threshold(last_10_diff, np.quantile(last_10_diff, 0.7), 255, cv2.THRESH_BINARY)
+        _, image_thresh = cv2.threshold(last_20_diff, np.quantile(last_20_diff, 0.7), 255, cv2.THRESH_BINARY)
         # Erode once to remove the 1 or 2 pixel wide noise from the image, and dilate 7 times to make sure all worm pixels are included
-        image_denoise = cv2.erode(image_thresh, kernel, iterations=2)
-        image_denoise = cv2.dilate(image_denoise, kernel, iterations=5)
+        image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=4)
+        image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=1)
         # Find blobs: labels = matrix with the same shape as image_denoise and contains label for every point
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
 
@@ -71,6 +72,12 @@ def track_worm(image_list):
     time_stamps = np.array(range(len(image_list)))[is_worm_tracked]
 
     return time_stamps.astype(int), trajectory_x, trajectory_y, silhouette_list
+
+
+# def find_better_silhouette(image, x, y):
+#     """
+#     Function that takes an image and the coordinates of a blob found using background subtraction.
+#     """
 
 
 def generate_tracking(image_path, regenerate_assembled_images=False, track_assembled=False):
@@ -182,9 +189,9 @@ else:
     # path = 'C:/Users/Asmar/Desktop/These/Patch_depletion/test_pipeline/20243101_OD0.2oldbact10gfp4s_Lsomethingworm_dishupsidedown-02/'
     path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
 
-regenerate_tracking = True
+regenerate_tracking = False
 if regenerate_tracking:
-    t, x, y, sil = generate_tracking(path, regenerate_assembled_images=False, track_assembled=False)
+    t, x, y, sil = generate_tracking(path, regenerate_assembled_images=False, track_assembled=True)
     print("This took ", time.time() - tic, "seconds to run!")
 else:
     os.chdir(path)
