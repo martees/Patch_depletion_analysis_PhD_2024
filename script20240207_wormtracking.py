@@ -3,10 +3,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import glob
 import script20240202_intensityevolutionin1area as intensity_ev
-from matplotlib.widgets import Slider
+
 import useful_functions
 import script202402_fuseimagesoverlap as fuse_images
 import os
+import time
 
 
 def find_image_path_list(image_path):
@@ -39,13 +40,13 @@ def track_worm(image_list):
             last_10_frames = image_list[i_frame]
             last_10_diff = image_list[i_frame] - last_10_frames
         else:
-            last_10_frames = np.mean([image_list[i] for i in range(max(0, i_frame - 10), i_frame)], axis=0)
+            last_10_frames = np.mean([image_list[j] for j in range(max(0, i_frame - 10), i_frame)], axis=0)
             last_10_diff = image_list[i_frame] - last_10_frames
 
         # Threshold the highest value pixels to get the worm blob
         _, image_thresh = cv2.threshold(last_10_diff, np.quantile(last_10_diff, 0.7), 255, cv2.THRESH_BINARY)
         # Erode once to remove the 1 or 2 pixel wide noise from the image, and dilate 7 times to make sure all worm pixels are included
-        image_denoise = cv2.erode(image_thresh, kernel, iterations=1)
+        image_denoise = cv2.erode(image_thresh, kernel, iterations=2)
         image_denoise = cv2.dilate(image_denoise, kernel, iterations=5)
         # Find blobs: labels = matrix with the same shape as image_denoise and contains label for every point
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
@@ -69,10 +70,10 @@ def track_worm(image_list):
     # Create a list of time stamps that correspond to the frame numbers of the tracked frames
     time_stamps = np.array(range(len(image_list)))[is_worm_tracked]
 
-    return time_stamps, trajectory_x, trajectory_y, silhouette_list
+    return time_stamps.astype(int), trajectory_x, trajectory_y, silhouette_list
 
 
-def generate_tracking(image_path, regenerate_assembled_images):
+def generate_tracking(image_path, regenerate_assembled_images=False, track_assembled=False):
     """
     This function takes the path to a directory containing a time series of images containing one worm (images are actually
     separated as 4 different tiles for 1 image), and will generate:
@@ -82,12 +83,12 @@ def generate_tracking(image_path, regenerate_assembled_images):
     - In the main directory:
         - a list_positions_x.npy array
         - a list_position_y.npy array
-        - a list_tracked_frame_numbers.npy array
+        - a list_tracked_frame_numbers.npy array/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/
     """
     # Assemble the images
     if not os.path.isdir(image_path + "assembled_images"):
         # If the assembled_images directory does not exist, create it
-        os.mkdir(image_path+"assembled_images")
+        os.mkdir(image_path + "assembled_images")
         # Force the tracking process to start by image assembly
         regenerate_assembled_images = True
     if regenerate_assembled_images:
@@ -96,43 +97,123 @@ def generate_tracking(image_path, regenerate_assembled_images):
         # Assemble images 4 by 4 (see description of fuse_images_overlap())
         for i_image in range(len(image_path_list) // 4):
             # Load the 4 tiles constituting each image into a list
-            current_image_paths = [image_path_list[4*i_image + i] for i in [0, 1, 2, 3]]
+            current_image_paths = [image_path_list[4 * i_image + i] for i in [0, 1, 2, 3]]
             current_image_list = [[], [], [], []]
             for i_tile in range(len(current_image_paths)):
                 current_image_list[i_tile] = cv2.imread(current_image_paths[i_tile], -1)  # -1 to keep their bit depth
             # Give the list to the assembly function
-            image = fuse_images.fuse_images_overlap(current_image_list)
+            image = fuse_images.fuse_images_overlap_2x2(current_image_list)
             # Convert it to 8bit and save
             ratio = np.amax(image) / 256
             image = (image / ratio).astype('uint8')
-            cv2.imwrite(image_path+"assembled_images/assembled"+str(4*i_image)+".tif", image)
+            # Generate an image number which always has 4 digits (for proper sorting later)
+            image_number = str(4 * i_image)
+            if i_image * 4 < 10:
+                image_number = "0"+image_number
+            if i_image * 4 < 100:
+                image_number = "0"+image_number
+            if i_image * 4 < 1000:
+                image_number = "0"+image_number
+            cv2.imwrite(image_path + "assembled_images/assembled" + image_number + ".tif", image)
 
-    # Load assembled images
-    image_path_list = find_image_path_list(image_path+"assembled_images/")
-    list_of_images = [[] for _ in range(len(image_path_list))]
-    for i_image in range(len(image_path_list)):
-        list_of_images[i_image] = cv2.imread(image_path_list[i_image], -1)
+    if track_assembled:
+        # Load images
+        image_path_list = find_image_path_list(image_path + "assembled_images/")
+        list_of_images = [[] for _ in range(len(image_path_list))]
+        for i_image in range(len(image_path_list)):
+            list_of_images[i_image] = cv2.imread(image_path_list[i_image], -1)
+        time_stamps, list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
 
-    # Track the worm, and save the results
-    time_stamps, list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
+    else:
+        # Load images
+        image_path_list = find_image_path_list(image_path)
+        list_of_images = [[] for _ in range(len(image_path_list))]
+        for i_image in range(len(image_path_list)):
+            list_of_images[i_image] = cv2.imread(image_path_list[i_image], -1)
+        # Separate them into the four quadrants to which they correspond
+        upper_left_images = [list_of_images[4 * j] for j in range(len(list_of_images)//4)]
+        upper_right_images = [list_of_images[4 * j + 1] for j in range(len(list_of_images)//4)]
+        lower_right_images = [list_of_images[4 * j + 2] for j in range(len(list_of_images)//4)]
+        lower_left_images = [list_of_images[4 * j + 3] for j in range(len(list_of_images)//4)]
+
+        # Track the worm in every quadrant independently
+        times_upper_left, x_upper_left, y_upper_left, silhouettes_upper_left = track_worm(upper_left_images)
+        times_upper_right, x_upper_right, y_upper_right, silhouettes_upper_right = track_worm(upper_right_images)
+        times_lower_right, x_lower_right, y_lower_right, silhouettes_lower_right = track_worm(lower_right_images)
+        times_lower_left, x_lower_left, y_lower_left, silhouettes_lower_left = track_worm(lower_left_images)
+
+        # Convert the coordinates to match the full image
+        x_upper_left, y_upper_left = useful_functions.shift_xy_coordinates_2x2(list_of_images[0], "upper left", 0.3,
+                                                                               x_upper_left, y_upper_left)
+        x_upper_right, y_upper_right = useful_functions.shift_xy_coordinates_2x2(list_of_images[0], "upper right", 0.3,
+                                                                                 x_upper_right, y_upper_right)
+        x_lower_left, y_lower_left = useful_functions.shift_xy_coordinates_2x2(list_of_images[0], "lower left", 0.3,
+                                                                               x_lower_left, y_lower_left)
+        x_lower_right, y_lower_right = useful_functions.shift_xy_coordinates_2x2(list_of_images[0], "lower right", 0.3,
+                                                                                 x_lower_right, y_lower_right)
+
+        time_stamps = np.concatenate([times_upper_left, times_upper_right, times_lower_right, times_lower_left])
+        list_positions_x = np.concatenate([x_upper_left, x_upper_right, x_lower_right, x_lower_left])
+        list_positions_y = np.concatenate([y_upper_left, y_upper_right, y_lower_right, y_lower_left])
+
+        silhouettes = [[] for _ in range(len(image_path_list)//4)]
+        for i_time in range(len(image_path_list)//4):
+            list_silhouettes = [silhouettes_upper_left[i_time], silhouettes_upper_right[i_time], silhouettes_lower_right[i_time], silhouettes_lower_left[i_time]]
+            silhouettes[i_time] = fuse_images.fuse_images_overlap_2x2(list_silhouettes, 0.3)
+
     np.save(image_path + "list_tracked_frame_numbers.npy", time_stamps)
     np.save(image_path + "list_positions_x.npy", list_positions_x)
     np.save(image_path + "list_positions_y.npy", list_positions_y)
+    np.save(image_path + "silhouettes.npy", silhouettes)
     # Instead of saving a huge silhouette table, save one per image in a separate folder
-    if not os.path.isdir(image_path+"/silhouettes"):
-        os.mkdir(image_path+"/silhouettes")
-    for i in range(len(silhouettes)):
-        np.save(image_path + "/silhouettes/silhouettes_"+str(i)+".npy", silhouettes[i])
+    # if not os.path.isdir(image_path+"/silhouettes"):
+    #     os.mkdir(image_path+"/silhouettes")
+    # for i_time in range(len(silhouettes)):
+    #     np.save(image_path + "/silhouettes/silhouettes_"+str(i_time)+".npy", silhouettes[i_time])
+
+    return time_stamps, list_positions_x, list_positions_y, silhouettes
 
 
+tic = time.time()
 if useful_functions.is_linux():
-    path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
+    path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/"
+    # path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
 else:
     # path = 'C:/Users/Asmar/Desktop/These/Patch_depletion/test_pipeline/20243101_OD0.2oldbact10gfp4s_Lsomethingworm_dishupsidedown-02/'
     path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
 
-generate_tracking(path, regenerate_assembled_images=False)
-print("hihi")
+regenerate_tracking = True
+if regenerate_tracking:
+    t, x, y, sil = generate_tracking(path, regenerate_assembled_images=False, track_assembled=False)
+    print("This took ", time.time() - tic, "seconds to run!")
+else:
+    os.chdir(path)
+    t, x, y, sil = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load("list_positions_y.npy"), np.load("silhouettes.npy")
+
+images_path = find_image_path_list(path)
+assembled_images_path = find_image_path_list(path + "assembled_images/")
+images_list = []
+assembled_images = []
+for i in range(len(images_path)):
+    images_list.append(cv2.imread(images_path[i], -1))
+    if i % 4 == 0:
+        assembled_images.append(cv2.imread(assembled_images_path[i//4], -1))
+
+useful_functions.interactive_worm_plot(images_list, assembled_images, t, x, y, sil)
+
+# os.chdir("/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/")
+# assembled_images_test = ["./assembled_images/assembled"+str(i)+".tif" for i in [272, 276, 280, 284, 288, 292, 296, 300, 304, 308, 312, 316, 320, 324]]
+# assembled_images_test = ["20243101_OD0.2oldbact10gfp4s_Lsomethingworm_dishupsidedown ("+str(i)+").tif" for i in [0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64]]
+# images_path = find_image_path_list(path)
+# images_path = images_path[272:304]
+# assembled_images_path = find_image_path_list(path+"assembled_images/")
+# images_list = []
+# assembled_images = []
+# for i in range(len(images_path)):
+#     images_list.append(cv2.imread(images_path[i], -1))
+#     assembled_images.append(cv2.imread(assembled_images_path[272/4+i], -1))
+# t, x, y, sil = track_worm(images_list)
+# # t, x, y, sil = np.load("list_positions_x.npy"),
 
 # interactive_worm_plot(list_of_images[1:], list_positions_x, list_positions_y, silhouettes)
 
@@ -143,3 +224,30 @@ print("hihi")
 # axs[1].plot(trajectory_x, trajectory_y, color="yellow")
 #
 # plt.show()
+
+
+# time_stamps = []
+# list_positions_x = []
+# list_positions_y = []
+# silhouettes = []
+# # Handle duplicate tracking
+# for i_time in range(len(list_of_images) // 4):  # for each time step
+#     list_of_x_for_this_time_step = []
+#     list_of_y_for_this_time_step = []
+#     if i_time in times_upper_left:
+#         list_of_x_for_this_time_step.append(x_upper_left)
+#         list_of_y_for_this_time_step.append(y_upper_left)
+#     if i_time in times_upper_right:
+#         list_of_x_for_this_time_step.append(x_upper_right)
+#         list_of_y_for_this_time_step.append(y_upper_right)
+#     if i_time in times_lower_right:
+#         list_of_x_for_this_time_step.append(x_lower_right)
+#         list_of_y_for_this_time_step.append(y_lower_right)
+#     if i_time in times_lower_left:
+#         list_of_x_for_this_time_step.append(x_lower_left)
+#         list_of_y_for_this_time_step.append(y_lower_left)
+#     # For every point in the tracking (should also work when there's just one)
+#     for i_track in range(len(list_of_x_for_this_time_step)):
+#         time_stamps.append(i_time)
+#         list_positions_x.append(np.mean(list_of_x_for_this_time_step))
+#         list_positions_y.append(np.mean(lis))
