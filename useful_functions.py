@@ -2,6 +2,7 @@ import os
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 import numpy as np
+import cv2
 
 
 def is_linux():  # returns true if you're using linux, otherwise false
@@ -13,10 +14,10 @@ def is_linux():  # returns true if you're using linux, otherwise false
         return False
 
 
-def interactive_worm_plot(image_list, full_images, timestamps, centroids_x, centroids_y, silhouettes):
+def interactive_worm_plot(images_paths, timestamps, centroids_x, centroids_y, silhouettes):
     """
     Function that shows a scrollable plot of the worm and the corresponding tracking.
-    Inputs: a time series of images, a time series of centroids and silhouettes for the tracked worm.
+    Inputs: a list of paths to a time series of .tif images, and arrays with time series of centroids and silhouettes for the tracked worm.
     Output: a plot with on the left, the current video image, and on the right, the corresponding
     worm silhouette and centroid.
     """
@@ -32,7 +33,7 @@ def interactive_worm_plot(image_list, full_images, timestamps, centroids_x, cent
     curr_time = 0
 
     # Left axis: current frame of the image
-    left_ax.imshow(image_list[0])
+    left_ax.imshow(cv2.imread(images_paths[0], -1))
     left_ax.set_title("Image at current time point")
 
     # Right axis: tracking of current frame
@@ -41,7 +42,7 @@ def interactive_worm_plot(image_list, full_images, timestamps, centroids_x, cent
     right_ax.set_title("Current tracking")
 
     # Call the update frame once to initialize the plot
-    update_frame(image_list, full_images, timestamps, silhouettes, centroids_x, centroids_y, curr_time)
+    update_frame(images_paths, timestamps, silhouettes, centroids_x, centroids_y, curr_time)
 
     # Make the plot scrollable
     def scroll_event(event):
@@ -52,7 +53,7 @@ def interactive_worm_plot(image_list, full_images, timestamps, centroids_x, cent
             curr_time = max(0, curr_time - 1)
         else:
             return
-        update_frame(image_list, full_images, timestamps, silhouettes, centroids_x, centroids_y, curr_time)
+        update_frame(images_paths, timestamps, silhouettes, centroids_x, centroids_y, curr_time)
 
     fig.canvas.mpl_connect('scroll_event', scroll_event)
 
@@ -60,14 +61,14 @@ def interactive_worm_plot(image_list, full_images, timestamps, centroids_x, cent
     global bottom_ax
     fig = plt.gcf()
     bottom_ax = fig.add_axes([0.25, 0.1, 0.65, 0.03])
-    frame_slider = Slider(bottom_ax, 'Time', 0, len(full_images), valinit=0, color="green")
+    frame_slider = Slider(bottom_ax, 'Time', 0, len(images_paths), valinit=0, color="green")
     plt.subplots_adjust(left=0.25, bottom=.2, right=None, top=.9, wspace=.2, hspace=.2)
 
     # Slider update function
     def slider_update(val):  # val argument gives "unused" warning in PyCharm but is necessary
         global curr_time
         curr_time = int(frame_slider.val)
-        update_frame(image_list, full_images, timestamps, silhouettes, centroids_x, centroids_y, curr_time)
+        update_frame(images_paths, timestamps, silhouettes, centroids_x, centroids_y, curr_time)
 
     # Slider function update call
     frame_slider.on_changed(slider_update)
@@ -82,21 +83,23 @@ def interactive_worm_plot(image_list, full_images, timestamps, centroids_x, cent
     plt.show()
 
 
-def update_frame(image_list, assembled_images, list_timestamps, list_of_silhouettes, list_centroids_x, list_centroids_y, index):
+def update_frame(images_paths, list_timestamps, list_of_silhouettes, list_centroids_x, list_centroids_y, index):
     """
     Function that is called every time the time index has to change.
     """
     global right_ax
     global left_ax
-    # Update current video frame on left axis
-    left_ax.imshow(assembled_images[index//4])
+    # Update current video frame on left axis: divided by 4 because full images are named after
+    # index of the first image (for now)
+    left_ax.cla()
+    left_ax.imshow(cv2.imread(images_paths[index//4], -1))
     # Update current tracking on right axis
     right_ax.cla()
     right_ax.imshow(list_of_silhouettes[index])
     right_ax.scatter(list_centroids_x[list_timestamps == index], list_centroids_y[list_timestamps == index], color="red")
     right_ax.set_title("Current frame: " + str(index))
-    curr_fig = plt.gcf()
-    curr_fig.canvas.draw()
+    #curr_fig = plt.gcf()
+    #curr_fig.canvas.draw()
 
 
 def shift_xy_coordinates_2x2(image, position, overlap, x_coord, y_coord):

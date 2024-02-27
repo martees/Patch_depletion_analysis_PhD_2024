@@ -47,8 +47,8 @@ def track_worm(image_list):
         # Threshold the highest value pixels to get the worm blob
         _, image_thresh = cv2.threshold(last_20_diff, np.quantile(last_20_diff, 0.7), 255, cv2.THRESH_BINARY)
         # Erode once to remove the 1 or 2 pixel wide noise from the image, and dilate 7 times to make sure all worm pixels are included
-        image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=4)
-        image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=1)
+        # image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=4)
+        image_denoise = cv2.dilate(image_thresh, dilation_kernel, iterations=1)
         # Find blobs: labels = matrix with the same shape as image_denoise and contains label for every point
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
 
@@ -187,7 +187,7 @@ if useful_functions.is_linux():
     # path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
 else:
     # path = 'C:/Users/Asmar/Desktop/These/Patch_depletion/test_pipeline/20243101_OD0.2oldbact10gfp4s_Lsomethingworm_dishupsidedown-02/'
-    path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
+    path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests_windows/'
 
 regenerate_tracking = False
 if regenerate_tracking:
@@ -195,18 +195,42 @@ if regenerate_tracking:
     print("This took ", time.time() - tic, "seconds to run!")
 else:
     os.chdir(path)
-    t, x, y, sil = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load("list_positions_y.npy"), np.load("silhouettes.npy")
+    t, x, y = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load("list_positions_y.npy")
 
 images_path = find_image_path_list(path)
 assembled_images_path = find_image_path_list(path + "assembled_images/")
-images_list = []
-assembled_images = []
-for i in range(len(images_path)):
-    images_list.append(cv2.imread(images_path[i], -1))
-    if i % 4 == 0:
-        assembled_images.append(cv2.imread(assembled_images_path[i//4], -1))
 
-useful_functions.interactive_worm_plot(images_list, assembled_images, t, x, y, sil)
+whole_image_intensity = []
+close_to_worm_intensity = []
+no_worm_intensity = []
+list_of_intensity_averages = []
+for i in range(len(images_path)):
+    if i in t:
+        current_image = cv2.imread(assembled_images_path[i//4], -1)
+        current_x_worm = np.array(x[t == i]).astype(int)
+        current_y_worm = np.array(y[t == i]).astype(int)
+        current_x_worm = current_x_worm[0]
+        current_y_worm = current_y_worm[0]
+        whole_image_intensity.append(np.mean(current_image))
+        close_to_worm_intensity.append(np.mean(current_image[current_x_worm-100:current_x_worm+100, current_y_worm-100:current_y_worm+100]))
+        # Area around the around the worm area, but without worm
+        further_from_worm_left = current_image[]
+        no_worm_intensity.append(np.mean(current_image[]))
+plt.plot(range(len(whole_image_intensity)), whole_image_intensity, label="whole image intensity")
+plt.plot(range(len(whole_image_intensity)), no_worm_intensity, label="whole image intensity")
+plt.plot(range(len(close_to_worm_intensity)), close_to_worm_intensity, label="close to worm intensity, 200px square")
+plt.plot(range(len(close_to_worm_intensity)), close_to_worm_intensity/, label="1/the other")
+plt.legend()
+plt.show()
+
+# images_list = []
+# assembled_images = []
+# for i in range(len(images_path)):
+#     images_list.append(cv2.imread(images_path[i], -1))
+#     if i % 4 == 0:
+#         assembled_images.append(cv2.imread(assembled_images_path[i//4], -1))
+#
+# useful_functions.interactive_worm_plot(assembled_images_path, t, x, y, sil)
 
 # os.chdir("/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/")
 # assembled_images_test = ["./assembled_images/assembled"+str(i)+".tif" for i in [272, 276, 280, 284, 288, 292, 296, 300, 304, 308, 312, 316, 320, 324]]
