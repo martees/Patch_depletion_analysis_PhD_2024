@@ -210,18 +210,11 @@ list_of_intensity_averages = []
 
 first_loop = True
 
-close_to_worm_areas = []
-further_from_worm_areas = []
-t_list = []
-
 for i in range(len(images_path)):
     if i in t:
         current_image = cv2.imread(assembled_images_path[i//4], -1)
-        current_x_worm = np.array(x[t == i]).astype(int)
-        current_y_worm = np.array(y[t == i]).astype(int)
-        current_x_worm = current_x_worm[0]
-        current_y_worm = current_y_worm[0]
-        t_list.append(i)
+        current_x_worm = int(x[t == i][0])
+        current_y_worm = int(y[t == i][0])
 
         # Plot areas so that we see what they look like!
         if first_loop:
@@ -233,30 +226,51 @@ for i in range(len(images_path)):
             plt.show()
 
         whole_image_intensity.append(np.mean(current_image))
-        close_to_worm_intensity.append(np.mean(current_image[current_x_worm-close_radius:current_x_worm+close_radius, current_y_worm-close_radius:current_y_worm+close_radius]))
-        # Area around the around the worm area, but without worm
+
+        # Area close to the worm
+        current_close_area = current_image[current_x_worm-close_radius:current_x_worm+close_radius, current_y_worm-close_radius:current_y_worm+close_radius]
+        close_to_worm_intensity.append(np.mean(current_close_area))
+
+        # Area around the "close to worm" area (section between the two radii)
+        # We divide it in 4 segments to exclude the area close to the worm
         further_from_worm_left = current_image[current_x_worm - further_radius: current_x_worm - close_radius, current_y_worm - further_radius: current_y_worm + further_radius]
         further_from_worm_right = current_image[current_x_worm + close_radius: current_x_worm + further_radius, current_y_worm - further_radius: current_y_worm + further_radius]
         further_from_worm_top = current_image[current_x_worm - close_radius: current_x_worm + close_radius, current_y_worm + close_radius: current_y_worm + further_radius]
         further_from_worm_bottom = current_image[current_x_worm - close_radius: current_x_worm + close_radius, current_y_worm - further_radius: current_y_worm - close_radius]
-        no_worm_image = np.concatenate((np.ravel(further_from_worm_left), np.ravel(further_from_worm_right), np.ravel(further_from_worm_top), np.ravel(further_from_worm_bottom)))
+        # Make it all a line because we only care about the intensities
+        current_further_area = np.concatenate((np.ravel(further_from_worm_left), np.ravel(further_from_worm_right), np.ravel(further_from_worm_top), np.ravel(further_from_worm_bottom)))
+        no_worm_intensity.append(np.mean(current_further_area))
 
-        no_worm_intensity.append(np.mean(no_worm_image))
+# Compute the temporal dynamics of one area before / after worm arrives
+worm_passage = t[8]  # take some time step where the worm is tracked
+area_center_x = int(x[t == worm_passage][0])  # center area on worm position
+area_center_y = int(y[t == worm_passage][0])
 
-whole_image_intensity = np.array(whole_image_intensity)
-no_worm_intensity = np.array(no_worm_intensity)
-close_to_worm_intensity = np.array(close_to_worm_intensity)
+close_x_range = []
+further_x_range = []
+close_y_range = []
+further_y_range = []
 
-fig, [left_ax, right_ax] = plt.subplots(1, 2)
-left_ax.plot(t_list, whole_image_intensity, label="whole image intensity")
-left_ax.plot(t_list, no_worm_intensity, label="no worm intensity")
-left_ax.plot(t_list, close_to_worm_intensity, label="close to worm intensity")
-left_ax.legend()
-right_ax.plot(t_list, close_to_worm_intensity/whole_image_intensity, label="worm/whole")
-right_ax.plot(t_list, close_to_worm_intensity/no_worm_intensity, label="worm/noworm")
-right_ax.legend()
-plt.suptitle("Radius around worm: "+str(close_radius)+"px. Radius for no_worm:"+str(further_radius)+"px")
-plt.show()
+avg_intensity = []
+for time in range(len(images_path)):  # for every time step, look at intensity in the area
+    avg_intensity.append()
+
+# whole_image_intensity = np.array(whole_image_intensity)
+# no_worm_intensity = np.array(no_worm_intensity)
+# close_to_worm_intensity = np.array(close_to_worm_intensity)
+#
+# fig, [left_ax, right_ax] = plt.subplots(1, 2)
+# left_ax.plot(t, whole_image_intensity, label="whole image intensity")
+# left_ax.plot(t, no_worm_intensity, label="no worm intensity")
+# left_ax.plot(t, close_to_worm_intensity, label="close to worm intensity")
+# left_ax.legend()
+# right_ax.plot(t, close_to_worm_intensity/whole_image_intensity, label="worm/whole")
+# right_ax.plot(t, close_to_worm_intensity/no_worm_intensity, label="worm/noworm")
+# right_ax.legend()
+# plt.suptitle("Radius around worm: "+str(close_radius)+"px. Radius for no_worm:"+str(further_radius)+"px")
+# plt.show()
+
+
 
 # images_list = []
 # assembled_images = []
