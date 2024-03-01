@@ -19,7 +19,7 @@ def find_image_path_list(image_path):
     # image_path_list = image_path_list[400:]
     if not useful_functions.is_linux():  # On windows the glob output uses \\ as separators so remove that
         image_path_list = [name.replace("\\", '/') for name in image_path_list]
-    return image_path_list
+    return np.array(image_path_list)
 
 
 def track_worm(image_list):
@@ -40,6 +40,7 @@ def track_worm(image_list):
         if i_frame % 10 == 0:
             print("Tracking frame " + str(i_frame) + " / " + str(len(image_list)))
         # Background subtraction: average the last 10 frames and subtract this to current frame to get the worm
+
         if i_frame == 0:  # treating frame 0 differently because there are no previous frame for subtraction
             last_20_frames = image_list[i_frame]
             last_20_diff = image_list[i_frame] - last_20_frames
@@ -133,6 +134,8 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
         image_path_list = find_image_path_list(image_path)
         # Assemble images 4 by 4 (see description of fuse_images_overlap())
         for i_image in range(len(image_path_list) // 4):
+            if i_image % 10 == 0:
+                print("Assembling images "+str(i_image)+" / "+str(len(image_path_list)))
             # Load the 4 tiles constituting each image into a list
             current_image_paths = [image_path_list[4 * i_image + i] for i in [0, 1, 2, 3]]
             current_image_list = [[], [], [], []]
@@ -144,12 +147,12 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
             ratio = np.amax(image) / 256
             image = (image / ratio).astype('uint8')
             # Generate an image number which always has 4 digits (for proper sorting later)
-            image_number = str(4 * i_image)
-            if i_image * 4 < 10:
+            image_number = str(i_image)
+            if i_image < 10:
                 image_number = "0" + image_number
-            if i_image * 4 < 100:
+            if i_image < 100:
                 image_number = "0" + image_number
-            if i_image * 4 < 1000:
+            if i_image < 1000:
                 image_number = "0" + image_number
             cv2.imwrite(image_path + "assembled_images/assembled" + image_number + ".tif", image)
 
@@ -163,6 +166,7 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
             list_of_images[i_image] = cv2.imread(image_path_list[i_image], -1)
         print("Finished loading images")
         time_stamps, list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
+        print("Finished tracking")
 
     else:
         # Load images
@@ -202,61 +206,50 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
                                 silhouettes_lower_right[i_time], silhouettes_lower_left[i_time]]
             silhouettes[i_time] = fuse_images.fuse_images_overlap_2x2(list_silhouettes, 0.3)
 
+    # Saving data tables
     np.save(image_path + "list_tracked_frame_numbers.npy", time_stamps)
     np.save(image_path + "list_positions_x.npy", list_positions_x)
     np.save(image_path + "list_positions_y.npy", list_positions_y)
-    np.save(image_path + "silhouettes.npy", silhouettes)
+
     # Instead of saving a huge silhouette table, save one per image in a separate folder
-    # if not os.path.isdir(image_path+"/silhouettes"):
-    #     os.mkdir(image_path+"/silhouettes")
-    # for i_time in range(len(silhouettes)):
-    #     np.save(image_path + "/silhouettes/silhouettes_"+str(i_time)+".npy", silhouettes[i_time])
+    if not os.path.isdir(image_path+"/silhouettes"):
+        os.mkdir(image_path+"/silhouettes")
+    for i_time in range(len(silhouettes)):
+        np.save(image_path + "/silhouettes/silhouettes_"+str(i_time)+".npy", silhouettes[i_time])
 
     return time_stamps, list_positions_x, list_positions_y, silhouettes
 
 
-tic = time.time()
-if useful_functions.is_linux():
-    # path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/"
-    path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
-else:
-    path = 'E:/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
-    # path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
+def generate_no_worm_images(image_path, x, y, t):
+    """
+    Takes a path containing images
+    """
 
-regenerate_tracking = True
-if regenerate_tracking:
-    t, x, y, sil = generate_tracking(path, regenerate_assembled_images=False, track_assembled=True)
-    print("This took ", time.time() - tic, "seconds to run!")
-else:
-    os.chdir(path)
-    t, x, y, sil = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load(
-        "list_positions_y.npy"), np.load("silhouettes.npy")
 
-images_path = find_image_path_list(path)
-assembled_images_path = find_image_path_list(path + "assembled_images/")
-
-# useful_functions.interactive_worm_plot(assembled_images_path, t, x, y, sil)
-
-small_radius = 400
-big_radius = 500
-
-for tracked_time in range(len(t)):
+def intensity_evolution_1_area_where_worm_was(list_of_x, list_of_y, tracked_time_points, when, small_radius, big_radius):
+    """
+    Function that will plot the intensity evolution in an area where the worm went at time point defined by the "when"
+    parameter (so the goal is to look at the dynamic of the intensity before / during / after the worm was somewhere).
+    Uses a small and a big radius to define squares around the worm. Inside is divided by outside.
+    """
     # Compute the temporal dynamics of one area before / after worm arrives
-    worm_passage = t[tracked_time]  # take some time step where the worm is tracked
-    area_center_x = int(x[t == worm_passage][0])  # center area on worm position
-    area_center_y = int(y[t == worm_passage][0])
+    worm_passage = tracked_time_points[when]  # take some time step where the worm is tracked
+    area_center_x = int(list_of_x[tracked_time_points == worm_passage][0])  # center area on worm position
+    area_center_y = int(list_of_y[tracked_time_points == worm_passage][0])
 
     worm_distance = []
     avg_intensity_close = []
     avg_intensity_further = []
     avg_intensity_full_img = []
     for time in range(len(assembled_images_path)):  # for every time step, look at intensity in the area
+        if time % 10 == 0:
+            print("Looking at time step "+str(time)+" / "+str(len(assembled_images_path)))
         current_image = cv2.imread(assembled_images_path[time // 4], -1)
         avg_intensity_full_img.append(np.mean(current_image))
 
-        if time in t:
-            current_worm_x = int(x[t == time][0])
-            current_worm_y = int(y[t == time][0])
+        if time in tracked_time_points:
+            current_worm_x = int(list_of_x[tracked_time_points == time][0])
+            current_worm_y = int(list_of_y[tracked_time_points == time][0])
             # Compute current distance to worm
             worm_distance.append(np.sqrt((current_worm_x - area_center_x) ** 2 + (current_worm_y - area_center_y) ** 2))
 
@@ -282,7 +275,7 @@ for tracked_time in range(len(t)):
 
     fig, [left_ax, right_ax, rightmost_ax] = plt.subplots(1, 3)
     fig.set_size_inches(18, 4)
-    plt.suptitle("Intensity evolution in the area where the worm crosses at time=" + str(tracked_time))
+    plt.suptitle("Intensity evolution in the area where the worm crosses at time=" + str(when))
 
     left_ax.imshow(cv2.imread(assembled_images_path[worm_passage], -1), vmax=70)
     left_ax.plot([area_center_x - small_radius, area_center_x + small_radius, area_center_x + small_radius,
@@ -308,11 +301,89 @@ for tracked_time in range(len(t)):
     right_ax.set_title("Average intensity evolution in the two squares")
     right_ax.legend()
 
-    rightmost_ax.plot(t, worm_distance, color="green")
+    rightmost_ax.plot(tracked_time_points, worm_distance, color="green")
     rightmost_ax.axvline(worm_passage, color="red", label="worm passage")
     rightmost_ax.set_title("Evolution of distance from worm to current area")
 
     plt.show()
+
+
+def intensity_as_a_function_of_worm_distance(parent_path, area_x_range, area_y_range, x_worm, y_worm, t_worm):
+    """
+    Function that takes a path containing a time series of images, x and y ranges defining a rectangular area on it,
+    and tracked time points of the worm (x, y, and t)
+    Will plot intensity as a function of distance to the worm.
+    """
+    path_to_images = find_image_path_list(parent_path)
+    area_center = [np.mean(area_x_range), np.mean(area_y_range)]
+    area_radius = np.max([abs(area_x_range[0] - area_x_range[1]), abs(area_y_range[0] - area_y_range[1])])
+
+    avg_intensity = []
+    distance_to_worm = []
+    previous_avg_intensity = 0
+    first_loop = True
+    for i_time in range(len(path_to_images)):
+        if i_time in t_worm:  # if the worm is tracked in the current time step
+            time_index = np.where(t_worm == i_time)[0][0]
+            curr_img = cv2.imread(path_to_images[time_index], -1)
+            curr_avg_intensity = np.mean(curr_img[area_x_range[0]: area_x_range[1], area_y_range[0]: area_y_range[1]])
+            if first_loop:
+                first_loop = False
+                previous_avg_intensity = curr_avg_intensity
+            avg_intensity.append(curr_avg_intensity - previous_avg_intensity)
+            previous_avg_intensity = curr_avg_intensity
+            distance_to_worm.append(np.sqrt((area_center[0] - x_worm[time_index])**2 + (area_center[1] - y_worm[time_index])**2))
+
+    fig, [left_ax, right_ax] = plt.subplots(1, 2)
+    fig.set_size_inches(12, 6)
+
+    # An ugly one-liner to get the image corresponding to the smallest distance from worm to area
+    min_distance_index = t_worm[np.argmin(distance_to_worm)]
+    left_ax.imshow(cv2.imread(path_to_images[min_distance_index], -1), vmax=70)
+    left_ax.plot([area_x_range[0], area_x_range[1], area_x_range[1], area_x_range[0], area_x_range[0]],
+                 [area_y_range[1], area_y_range[1], area_y_range[0], area_y_range[0], area_y_range[1]],
+                 color="orange", label="x="+str(area_x_range)+", y="+str(area_y_range))
+    left_ax.set_title("Video image with worm as close as possible (t="+str(np.argmin(distance_to_worm))+")")
+    left_ax.legend()
+
+    avg_intensity = np.array(avg_intensity)
+    distance_to_worm = np.array(distance_to_worm)
+    right_ax.plot(distance_to_worm, avg_intensity, color="lightgray", zorder=0)
+    right_ax.scatter(distance_to_worm, avg_intensity, c=t_worm[t_worm < len(path_to_images)], cmap="jet")
+    right_ax.scatter(distance_to_worm[distance_to_worm < area_radius], avg_intensity[distance_to_worm < area_radius],
+                     marker="*", c=t_worm[t_worm < len(path_to_images)][distance_to_worm < area_radius],
+                     cmap="jet", label="Worm centroid inside area")
+    right_ax.set_xlabel("Distance to the worm")
+    right_ax.set_ylabel("Average intensity of the area")
+    right_ax.set_title("Intensity as a function of worm-to-area distance")
+
+    plt.show()
+
+
+tic = time.time()
+if useful_functions.is_linux():
+    # path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/"
+    path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
+else:
+    # path = "C:/Users/apeadmin/Desktop/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
+    # path = 'E:/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
+    path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
+
+regenerate_tracking = True
+if regenerate_tracking:
+    t, x, y, sil = generate_tracking(path, regenerate_assembled_images=False, track_assembled=True)
+    print("Tracking over and saved, it took ", time.time() - tic, "seconds to run!")
+else:
+    os.chdir(path)
+    t, x, y = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load("list_positions_y.npy")
+    print("Finished loading data tables.")
+
+images_path = find_image_path_list(path)
+assembled_images_path = find_image_path_list(path + "assembled_images/")
+
+# intensity_evolution_1_area_where_worm_was(x, y, t, 34, 400, 500)
+# intensity_as_a_function_of_worm_distance(path + "assembled_images/", [1000, 1500], [2500, 3000], x, y, t)
+useful_functions.interactive_worm_plot(assembled_images_path, t, x, y)
 
 # whole_image_intensity = np.array(whole_image_intensity)
 # no_worm_intensity = np.array(no_worm_intensity)
