@@ -33,35 +33,65 @@ def track_worm(image_list):
     # List of pixel-wise tracking output for each time point
     silhouette_list = []
     erosion_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(8, 8))
-    dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(128, 128))
+    # dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(24, 24))
     is_worm_tracked = [True for _ in range(len(image_list))]
+    last_20_frames = 0
     for i_frame in range(len(image_list)):
+        if i_frame % 10 == 0:
+            print("Tracking frame " + str(i_frame) + " / " + str(len(image_list)))
         # Background subtraction: average the last 10 frames and subtract this to current frame to get the worm
         if i_frame == 0:  # treating frame 0 differently because there are no previous frame for subtraction
             last_20_frames = image_list[i_frame]
             last_20_diff = image_list[i_frame] - last_20_frames
-        else:
+        # else:
+        #     last_20_frames = np.mean([image_list[j] for j in range(max(0, i_frame - 20), i_frame)], axis=0)
+        #     last_20_diff = image_list[i_frame] - last_20_frames
+        elif i_frame < 21:  # treating frames that are between 1 and 19 differently for 20-frame-deep bg subtraction
             last_20_frames = np.mean([image_list[j] for j in range(max(0, i_frame - 20), i_frame)], axis=0)
+            last_20_diff = image_list[i_frame] - last_20_frames
+        else:
+            last_20_frames = last_20_frames + 1 / 20 * (image_list[i_frame] - image_list[i_frame - 21])
             last_20_diff = image_list[i_frame] - last_20_frames
 
         # Threshold the highest value pixels to get the worm blob
         _, image_thresh = cv2.threshold(last_20_diff, np.quantile(last_20_diff, 0.7), 255, cv2.THRESH_BINARY)
-        # Erode once to remove the 1 or 2 pixel wide noise from the image, and dilate 7 times to make sure all worm pixels are included
-        # image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=4)
-        image_denoise = cv2.dilate(image_thresh, dilation_kernel, iterations=1)
+        # Erode once to remove the 1 or 2 pixel wide noise from the image, and dilate multiple times to make it more
+        # probable that the worm is only one blob
+        image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=3)
+        # image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=1)
         # Find blobs: labels = matrix with the same shape as image_denoise and contains label for every point
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
 
-        # Check if this frame has only one blob (so only the background, no worm detected, and remember that)
+        # Check if this frame has only one blob (so only the background, no worm detected, and remember that for later)
         if num_blobs == 1:
             is_worm_tracked[i_frame] = False
+        else:
+            # Exclude first blob (background)
+            centroids = centroids[1:]
+            # If centroids are too far apart, just take the closest one to the previous one
+            if np.max(centroids[:, 0]) - np.min(centroids[:, 0]) > 600 or np.max(centroids[:, 1]) - np.min(
+                    centroids[:, 1]) > 600:
+                distance_to_previous = np.sqrt((centroids[0, 0] - trajectory_x[i_frame - 1]) ** 2 + (
+                            centroids[0, 1] - trajectory_y[i_frame - 1]) ** 2)
+                min_distance = distance_to_previous
+                best_centroid = 0
+                for i_centroid in range(len(centroids)):
+                    distance_to_previous = np.sqrt((centroids[i_centroid, 0] - trajectory_x[i_frame - 1]) ** 2 + (
+                            centroids[i_centroid, 1] - trajectory_y[i_frame - 1]) ** 2)
+                    if distance_to_previous < min_distance:
+                        min_distance = distance_to_previous
+                        best_centroid = i_centroid
+                    if distance_to_previous < 600:
+                        break
+                trajectory_x[i_frame] = centroids[best_centroid, 0]
+                trajectory_y[i_frame] = centroids[best_centroid, 1]
 
-        # Exclude first blob (background) and make a centroid of the centroids
-        centroids = centroids[1:]
-        centroid_of_centroids_x = np.mean(centroids[:, 0])
-        centroid_of_centroids_y = np.mean(centroids[:, 1])
-        trajectory_x[i_frame] = centroid_of_centroids_x
-        trajectory_y[i_frame] = centroid_of_centroids_y
+            # If centroids are all close to each other, take the centroid of the centroids
+            else:
+                centroid_of_centroids_x = np.mean(centroids[:, 0])
+                centroid_of_centroids_y = np.mean(centroids[:, 1])
+                trajectory_x[i_frame] = centroid_of_centroids_x
+                trajectory_y[i_frame] = centroid_of_centroids_y
 
         silhouette_list.append(labels)
 
@@ -128,7 +158,10 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
         image_path_list = find_image_path_list(image_path + "assembled_images/")
         list_of_images = [[] for _ in range(len(image_path_list))]
         for i_image in range(len(image_path_list)):
+            if i_image % 25 == 0:
+                print("Loading image " + str(i_image) + " / " + str(len(image_path_list)))
             list_of_images[i_image] = cv2.imread(image_path_list[i_image], -1)
+        print("Finished loading images")
         time_stamps, list_positions_x, list_positions_y, silhouettes = track_worm(list_of_images)
 
     else:
@@ -184,11 +217,11 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
 
 tic = time.time()
 if useful_functions.is_linux():
-    path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/"
-    # path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
+    # path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/"
+    path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
 else:
     path = 'E:/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
-    # path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests_windows/'
+    # path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
 
 regenerate_tracking = True
 if regenerate_tracking:
@@ -196,14 +229,16 @@ if regenerate_tracking:
     print("This took ", time.time() - tic, "seconds to run!")
 else:
     os.chdir(path)
-    t, x, y = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load(
-        "list_positions_y.npy")
+    t, x, y, sil = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load(
+        "list_positions_y.npy"), np.load("silhouettes.npy")
 
 images_path = find_image_path_list(path)
 assembled_images_path = find_image_path_list(path + "assembled_images/")
 
-small_radius = 200
-big_radius = 400
+# useful_functions.interactive_worm_plot(assembled_images_path, t, x, y, sil)
+
+small_radius = 400
+big_radius = 500
 
 for tracked_time in range(len(t)):
     # Compute the temporal dynamics of one area before / after worm arrives
@@ -214,31 +249,40 @@ for tracked_time in range(len(t)):
     worm_distance = []
     avg_intensity_close = []
     avg_intensity_further = []
+    avg_intensity_full_img = []
     for time in range(len(assembled_images_path)):  # for every time step, look at intensity in the area
         current_image = cv2.imread(assembled_images_path[time // 4], -1)
+        avg_intensity_full_img.append(np.mean(current_image))
+
         if time in t:
             current_worm_x = int(x[t == time][0])
             current_worm_y = int(y[t == time][0])
             # Compute current distance to worm
-            worm_distance.append(np.sqrt((current_worm_x - area_center_x)**2 + (current_worm_y - area_center_y)**2))
+            worm_distance.append(np.sqrt((current_worm_x - area_center_x) ** 2 + (current_worm_y - area_center_y) ** 2))
 
         # Current state of the small area
-        current_small_area = current_image[area_center_x - small_radius:area_center_x + small_radius, area_center_y - small_radius:area_center_y + small_radius]
+        current_small_area = current_image[area_center_x - small_radius:area_center_x + small_radius,
+                             area_center_y - small_radius:area_center_y + small_radius]
         avg_intensity_close.append(np.mean(current_small_area))
 
         # Area around the "close to worm" area (section between the two radii)
         # We divide it in 4 segments to exclude the area close to the worm
-        further_from_worm_left = current_image[area_center_x - big_radius: area_center_x - small_radius, area_center_y - big_radius: area_center_y + big_radius]
-        further_from_worm_right = current_image[area_center_x + small_radius: area_center_x + big_radius, area_center_y - big_radius: area_center_y + big_radius]
-        further_from_worm_top = current_image[area_center_x - small_radius: area_center_x + small_radius, area_center_y + small_radius: area_center_y + big_radius]
-        further_from_worm_bottom = current_image[area_center_x - small_radius: area_center_x + small_radius, area_center_y - big_radius: area_center_y - small_radius]
+        further_from_worm_left = current_image[area_center_x - big_radius: area_center_x - small_radius,
+                                 area_center_y - big_radius: area_center_y + big_radius]
+        further_from_worm_right = current_image[area_center_x + small_radius: area_center_x + big_radius,
+                                  area_center_y - big_radius: area_center_y + big_radius]
+        further_from_worm_top = current_image[area_center_x - small_radius: area_center_x + small_radius,
+                                area_center_y + small_radius: area_center_y + big_radius]
+        further_from_worm_bottom = current_image[area_center_x - small_radius: area_center_x + small_radius,
+                                   area_center_y - big_radius: area_center_y - small_radius]
         # Make it all a line because we only care about the intensities
         current_further_area = np.concatenate((np.ravel(further_from_worm_left), np.ravel(further_from_worm_right),
                                                np.ravel(further_from_worm_top), np.ravel(further_from_worm_bottom)))
         avg_intensity_further.append(np.mean(current_further_area))
 
     fig, [left_ax, right_ax, rightmost_ax] = plt.subplots(1, 3)
-    plt.suptitle("Intensity evolution in the area where the worm crosses at time="+str(tracked_time))
+    fig.set_size_inches(18, 4)
+    plt.suptitle("Intensity evolution in the area where the worm crosses at time=" + str(tracked_time))
 
     left_ax.imshow(cv2.imread(assembled_images_path[worm_passage], -1), vmax=70)
     left_ax.plot([area_center_x - small_radius, area_center_x + small_radius, area_center_x + small_radius,
@@ -256,12 +300,16 @@ for tracked_time in range(len(t)):
 
     # right_ax.plot(range(len(avg_intensity_close)), avg_intensity_close, color="orange")
     # right_ax.plot(range(len(avg_intensity_further)), avg_intensity_further, color="black")
-    right_ax.plot(range(len(avg_intensity_close)), np.array(avg_intensity_close)/np.array(avg_intensity_further), label="orange/black avg intensity")
+    right_ax.plot(range(len(avg_intensity_close)), np.array(avg_intensity_close) / np.array(avg_intensity_full_img),
+                  color="blue", label="orange/full intensity")
+    right_ax.plot(range(len(avg_intensity_close)), np.array(avg_intensity_close) / np.array(avg_intensity_further),
+                  color="black", label="orange/black intensity")
     right_ax.axvline(worm_passage, color="red", label="worm passage")
     right_ax.set_title("Average intensity evolution in the two squares")
     right_ax.legend()
 
-    rightmost_ax.plot(t, worm_distance)
+    rightmost_ax.plot(t, worm_distance, color="green")
+    rightmost_ax.axvline(worm_passage, color="red", label="worm passage")
     rightmost_ax.set_title("Evolution of distance from worm to current area")
 
     plt.show()
