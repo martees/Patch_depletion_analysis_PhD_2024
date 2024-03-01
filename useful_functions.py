@@ -14,7 +14,7 @@ def is_linux():  # returns true if you're using linux, otherwise false
         return False
 
 
-def interactive_worm_plot(images_paths, timestamps, centroids_x, centroids_y, silhouettes):
+def interactive_worm_plot(images_paths, timestamps, centroids_x, centroids_y):
     """
     Function that shows a scrollable plot of the worm and the corresponding tracking.
     Inputs: a list of paths to a time series of .tif images, and arrays with time series of centroids and silhouettes for the tracked worm.
@@ -37,7 +37,7 @@ def interactive_worm_plot(images_paths, timestamps, centroids_x, centroids_y, si
     left_ax.set_title("Image at current time point")
 
     # Right axis: tracking of current frame
-    right_ax.imshow(silhouettes[0])
+    right_ax.imshow(cv2.imread(images_paths[0]+"_silhouette"))
     right_ax.scatter(centroids_x[curr_time], centroids_y[curr_time], color="red")
     right_ax.set_title("Current tracking")
 
