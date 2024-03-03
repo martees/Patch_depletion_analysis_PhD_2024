@@ -187,13 +187,13 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     evolution for this area. When you scroll, it should switch to the next frame, and display current time on curve.
     """
     # Find .tif images in the defined folder
-    image_path_list = sorted(glob.glob(image_path + "assembled_images/*.tif", recursive=False))
+    image_path_list = useful_functions.find_path_list(image_path)
 
     # Adjust end time so that it does not exceed maximal size
     end = min(end, len(image_path_list))
 
     # Set x_range and y_range as full image boundaries if they're set to None
-    first_img = cv2.imread(image_path_list[0], -1)
+    first_img = cv2.imread(image_path_list[0])
     if x_range is None:
         x_range = [0, first_img.shape[1]]
     if y_range is None:
@@ -205,8 +205,7 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     hist_list = []
     bin_list = []
     for i in range(start, end):
-        image = cv2.imread(image_path_list[i],
-                           -1)  # -1 parameter is to not ruin the .tif upon import!!! (bit depth is 16)
+        image = cv2.imread(image_path_list[i])
         # image = cv2.addWeighted(image, 60, np.zeros(image.shape, image.dtype), 0, 100)
         # image = 255*((image - min(0, np.min(image)))/np.max(image))
         image = image[y_range[0]:y_range[1], x_range[0]:x_range[1]]
@@ -466,8 +465,8 @@ def update_frame(list_of_images, histogram_values, bin_edges, index):
     # middle_ax.cla()
     middle_ax.imshow(list_of_images[index], vmax=60)
 
-    curr_fig = plt.gcf()
-    curr_fig.canvas.draw()
+    #curr_fig = plt.gcf()
+    #curr_fig.canvas.draw()
 
 
 if __name__ == "__main__":
