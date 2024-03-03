@@ -1,25 +1,11 @@
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
-import glob
-import script20240202_intensityevolutionin1area as intensity_ev
 
 import useful_functions
 import script202402_fuseimagesoverlap as fuse_images
 import os
 import time
-
-
-def find_image_path_list(image_path):
-    """
-    Takes the path to a directory, and returns a list of paths to all .tif images contained there, not looking into
-    subfolders.
-    """
-    image_path_list = sorted(glob.glob(image_path + "*.tif", recursive=False))
-    # image_path_list = image_path_list[400:]
-    if not useful_functions.is_linux():  # On windows the glob output uses \\ as separators so remove that
-        image_path_list = [name.replace("\\", '/') for name in image_path_list]
-    return np.array(image_path_list)
 
 
 def track_worm(image_list):
@@ -32,8 +18,8 @@ def track_worm(image_list):
     trajectory_y = np.zeros(len(image_list))
     # List of pixel-wise tracking output for each time point
     silhouette_list = []
-    erosion_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(8, 8))
-    # dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(24, 24))
+    erosion_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(12, 12))
+    dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(24, 24))
     is_worm_tracked = [True for _ in range(len(image_list))]
     last_20_frames = 0
     for i_frame in range(len(image_list)):
@@ -56,10 +42,10 @@ def track_worm(image_list):
 
         # Threshold the highest value pixels to get the worm blob
         _, image_thresh = cv2.threshold(last_20_diff, np.quantile(last_20_diff, 0.7), 255, cv2.THRESH_BINARY)
-        # Erode once to remove the 1 or 2 pixel wide noise from the image, and dilate multiple times to make it more
+        # Erode to remove the 1 or 2 pixel wide noise from the image, and dilate multiple times to make it more
         # probable that the worm is only one blob
-        image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=3)
-        # image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=1)
+        image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=1)
+        image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=3)
         # Find blobs: labels = matrix with the same shape as image_denoise and contains label for every point
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
 
@@ -69,30 +55,28 @@ def track_worm(image_list):
         else:
             # Exclude first blob (background)
             centroids = centroids[1:]
-            # If centroids are too far apart, just take the closest one to the previous one
-            if np.max(centroids[:, 0]) - np.min(centroids[:, 0]) > 600 or np.max(centroids[:, 1]) - np.min(
-                    centroids[:, 1]) > 600:
-                distance_to_previous = np.sqrt((centroids[0, 0] - trajectory_x[i_frame - 1]) ** 2 + (
-                            centroids[0, 1] - trajectory_y[i_frame - 1]) ** 2)
-                min_distance = distance_to_previous
-                best_centroid = 0
-                for i_centroid in range(len(centroids)):
-                    distance_to_previous = np.sqrt((centroids[i_centroid, 0] - trajectory_x[i_frame - 1]) ** 2 + (
-                            centroids[i_centroid, 1] - trajectory_y[i_frame - 1]) ** 2)
-                    if distance_to_previous < min_distance:
-                        min_distance = distance_to_previous
-                        best_centroid = i_centroid
-                    if distance_to_previous < 600:
-                        break
-                trajectory_x[i_frame] = centroids[best_centroid, 0]
-                trajectory_y[i_frame] = centroids[best_centroid, 1]
-
-            # If centroids are all close to each other, take the centroid of the centroids
-            else:
-                centroid_of_centroids_x = np.mean(centroids[:, 0])
-                centroid_of_centroids_y = np.mean(centroids[:, 1])
-                trajectory_x[i_frame] = centroid_of_centroids_x
-                trajectory_y[i_frame] = centroid_of_centroids_y
+            # Take the closest centroid to the previous one
+            distance_to_previous = np.sqrt((centroids[0, 0] - trajectory_x[max(0, i_frame - 1)]) ** 2 + (
+                        centroids[0, 1] - trajectory_y[max(0, i_frame - 1)]) ** 2)
+            min_distance = distance_to_previous
+            best_centroid = 0
+            for i_centroid in range(len(centroids)):
+                distance_to_previous = np.sqrt((centroids[i_centroid, 0] - trajectory_x[max(0, i_frame - 1)]) ** 2 + (
+                        centroids[i_centroid, 1] - trajectory_y[max(0, i_frame - 1)]) ** 2)
+                if distance_to_previous < min_distance:
+                    min_distance = distance_to_previous
+                    best_centroid = i_centroid
+                if distance_to_previous < 600:
+                    break
+            trajectory_x[i_frame] = centroids[best_centroid, 0]
+            trajectory_y[i_frame] = centroids[best_centroid, 1]
+            #
+            # # If centroids are all close to each other, take the centroid of the centroids
+            # else:
+            #     centroid_of_centroids_x = np.mean(centroids[:, 0])
+            #     centroid_of_centroids_y = np.mean(centroids[:, 1])
+            #     trajectory_x[i_frame] = centroid_of_centroids_x
+            #     trajectory_y[i_frame] = centroid_of_centroids_y
 
         silhouette_list.append(labels)
 
@@ -131,7 +115,7 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
         regenerate_assembled_images = True
     if regenerate_assembled_images:
         # Find images in the main directory
-        image_path_list = find_image_path_list(image_path)
+        image_path_list = useful_functions.find_path_list(image_path)
         # Assemble images 4 by 4 (see description of fuse_images_overlap())
         for i_image in range(len(image_path_list) // 4):
             if i_image % 10 == 0:
@@ -147,18 +131,12 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
             ratio = np.amax(image) / 256
             image = (image / ratio).astype('uint8')
             # Generate an image number which always has 4 digits (for proper sorting later)
-            image_number = str(i_image)
-            if i_image < 10:
-                image_number = "0" + image_number
-            if i_image < 100:
-                image_number = "0" + image_number
-            if i_image < 1000:
-                image_number = "0" + image_number
+            image_number = useful_functions.four_digit_string(i_image)
             cv2.imwrite(image_path + "assembled_images/assembled" + image_number + ".tif", image)
 
     if track_assembled:
         # Load images
-        image_path_list = find_image_path_list(image_path + "assembled_images/")
+        image_path_list = useful_functions.find_path_list(image_path + "assembled_images/")
         list_of_images = [[] for _ in range(len(image_path_list))]
         for i_image in range(len(image_path_list)):
             if i_image % 25 == 0:
@@ -170,7 +148,7 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
 
     else:
         # Load images
-        image_path_list = find_image_path_list(image_path)
+        image_path_list = useful_functions.find_path_list(image_path)
         list_of_images = [[] for _ in range(len(image_path_list))]
         for i_image in range(len(image_path_list)):
             list_of_images[i_image] = cv2.imread(image_path_list[i_image], -1)
@@ -211,11 +189,12 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
     np.save(image_path + "list_positions_x.npy", list_positions_x)
     np.save(image_path + "list_positions_y.npy", list_positions_y)
 
-    # Instead of saving a huge silhouette table, save one per image in a separate folder
-    if not os.path.isdir(image_path+"/silhouettes"):
-        os.mkdir(image_path+"/silhouettes")
+    # Instead of saving a huge silhouette table, save one per image in the assembled images folder
     for i_time in range(len(silhouettes)):
-        np.save(image_path + "/silhouettes/silhouettes_"+str(i_time)+".npy", silhouettes[i_time])
+        if i_time in time_stamps:
+            # Generate an image number which always has 4 digits (for proper sorting later)
+            image_number = useful_functions.four_digit_string(i_time)
+            np.save(image_path + "/assembled_images/assembled"+image_number+"_silhouette.npy", silhouettes[i_time])
 
     return time_stamps, list_positions_x, list_positions_y, silhouettes
 
@@ -314,7 +293,7 @@ def intensity_as_a_function_of_worm_distance(parent_path, area_x_range, area_y_r
     and tracked time points of the worm (x, y, and t)
     Will plot intensity as a function of distance to the worm.
     """
-    path_to_images = find_image_path_list(parent_path)
+    path_to_images = useful_functions.find_path_list(parent_path)
     area_center = [np.mean(area_x_range), np.mean(area_y_range)]
     area_radius = np.max([abs(area_x_range[0] - area_x_range[1]), abs(area_y_range[0] - area_y_range[1])])
 
@@ -360,16 +339,21 @@ def intensity_as_a_function_of_worm_distance(parent_path, area_x_range, area_y_r
     plt.show()
 
 
+test_pipeline = True
+regenerate_tracking = False
+
 tic = time.time()
 if useful_functions.is_linux():
-    # path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/"
-    path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
+    if test_pipeline:
+        path = "/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/subtest_for_tests/"
+    else:
+        path = '/media/admin/Expansion/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
 else:
-    # path = "C:/Users/apeadmin/Desktop/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/"
-    # path = 'E:/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
-    path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
+    if test_pipeline:
+        path = 'E:/Backup/Patch_depletion_dissectoscope/subtest_for_tests/'
+    else:
+        path = 'E:/Backup/Patch_depletion_dissectoscope/20243101_OD0.2oldbact10%gfp4s_Lsomethingworm_dishupsidedown-02/'
 
-regenerate_tracking = True
 if regenerate_tracking:
     t, x, y, sil = generate_tracking(path, regenerate_assembled_images=False, track_assembled=True)
     print("Tracking over and saved, it took ", time.time() - tic, "seconds to run!")
@@ -378,8 +362,8 @@ else:
     t, x, y = np.load("list_tracked_frame_numbers.npy"), np.load("list_positions_x.npy"), np.load("list_positions_y.npy")
     print("Finished loading data tables.")
 
-images_path = find_image_path_list(path)
-assembled_images_path = find_image_path_list(path + "assembled_images/")
+images_path = useful_functions.find_path_list(path)
+assembled_images_path = useful_functions.find_path_list(path + "assembled_images/")
 
 # intensity_evolution_1_area_where_worm_was(x, y, t, 34, 400, 500)
 # intensity_as_a_function_of_worm_distance(path + "assembled_images/", [1000, 1500], [2500, 3000], x, y, t)
