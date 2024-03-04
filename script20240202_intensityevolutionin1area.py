@@ -104,16 +104,17 @@ def intensity_evolution(list_of_images, x_range=None, y_range=None, remove_peaks
         x_range = [0, list_of_images[0].shape[1]]
     if y_range is None:
         y_range = [0, list_of_images[0].shape[0]]
-    #
-    x_range = [880, 900]
-    y_range = [1020, 1040]
 
+    is_nan_list = [False for _ in range(len(list_of_images))]
     avg_intensities = np.zeros(len(list_of_images))
     for i in range(len(list_of_images)):
-        avg_intensities[i] = np.mean(list_of_images[i][y_range[0]:y_range[1], x_range[0]:x_range[1]])
+        avg_intensities[i] = np.nanmean(list_of_images[i][y_range[0]:y_range[1], x_range[0]:x_range[1]])
+        if np.isnan(avg_intensities[i]):
+            avg_intensities[i] = avg_intensities[i - 1]
+            is_nan_list[i] = True
 
     # Smooth it
-    avg_intensities = savitzky_golay(avg_intensities, 41, 1)  # window size 51, polynomial order 1
+    # avg_intensities = savitzky_golay(avg_intensities, 3, 1)
 
     # Remove peaks in the intensity evolution because they correspond to the worm
     if remove_peaks:
@@ -144,31 +145,51 @@ def intensity_evolution(list_of_images, x_range=None, y_range=None, remove_peaks
         avg_intensities = np.interp(timestamps, timestamps_to_keep, avg_intensities)
         # np.interp takes the x where there should be data, the x of the current data, and the y, to make linear interpolation in the gaps
 
-    return avg_intensities
+    return avg_intensities, is_nan_list
 
 
 def find_drops(intensity_list):
     """
     Takes a list of intensities and returns the indices at which the intensity drops by more than threshold.
     """
-    first_derivative = intensity_list[1:] - intensity_list[:-1]
-    second_derivative = first_derivative[1:] - first_derivative[:-1]
-    potential_drops_2nd_order = np.where(second_derivative < 0)[0]
-    potential_drops_1st_order = np.where(first_derivative < 0)[0]
-    drops = 0
+    # first_derivative = intensity_list[1:] - intensity_list[:-1]
+    # second_derivative = first_derivative[1:] - first_derivative[:-1]
+
+    # potential_drops_2nd_order = np.where(second_derivative < 0)[0]
+    # potential_drops_1st_order = np.where(first_derivative < 0)[0]
+    drops = [0]
+
+    # Linear fit
+
+    #
+
     return drops
 
 
-def find_no_worm_sites(silhouettes_path, site_size):
+def no_worm_images(path, tracked_timestamps):
     """
-    Takes a path to a time series of worm silhouettes (matrices with tracking label of each pixel, 0 is background),
-    and a site size (an integer corresponding to half the side of a square site).
-    Will return a list of all the sites of the correct size that have never been too close to the silhouette.
+    Takes a path to a time series of images and a time series of tracked silhouettes, and the time stamps for which we have
+    a silhouette (time stamps not in tracked_timestamps have not been tracked) (yet).
+    Returns the images in image_path but with NaN where something had been tracked. Bisous.
     """
-    silhouettes_path_list = useful_functions.find_path_list(silhouettes_path, extension="*.npy")
-    silhouettes = 0
-    # Sum all silhouette matrices because we want to find sites that have never been visited
-    silhouettes_all_times = np.sum(silhouettes, axis=0)
+    images_path_list = useful_functions.find_path_list(path, extension="*.tif")
+    silhouettes_path_list = useful_functions.find_path_list(path, extension="*.npy")
+
+    # Load assembled images and silhouettes for tracked time points
+    list_of_images = [[] for _ in range(len(images_path_list))]
+    list_of_silhouettes = [[] for _ in range(len(images_path_list))]
+    for i in range(len(images_path_list)):
+        list_of_images[i] = cv2.cvtColor(cv2.imread(images_path_list[i]), cv2.COLOR_BGR2GRAY)
+        if i in tracked_timestamps:
+            list_of_silhouettes[i] = np.load(silhouettes_path_list[tracked_timestamps == i][0])
+
+    # For each tracked time step, replace blob pixels by NaNs in the images
+    for t in tracked_timestamps:
+        # Create a masked array where background values are 0 (so False), and blob values are not 0 (so True) => masked
+        masked = np.ma.masked_array(data=list_of_images[t].astype(np.float32), mask=list_of_silhouettes[t])
+        list_of_images[t] = masked.filled(np.nan)  # Replace masked values by NaNs
+
+    return list_of_images
 
 
 def find_non_visited_sites(silhouettes_path, dilation_radius, site_size):
@@ -181,16 +202,13 @@ def find_non_visited_sites(silhouettes_path, dilation_radius, site_size):
     return 0
 
 
-def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=None, analysis_size=10):
+def interactive_intensity_plot(image_path, x_range=None, y_range=None, analysis_size=10):
     """
     Function that shows a scrollable plot with on top, an area of the image, and on the bottom, the mean intensity
     evolution for this area. When you scroll, it should switch to the next frame, and display current time on curve.
     """
     # Find .tif images in the defined folder
-    image_path_list = useful_functions.find_path_list(image_path)
-
-    # Adjust end time so that it does not exceed maximal size
-    end = min(end, len(image_path_list))
+    image_path_list = useful_functions.find_path_list(image_path + "assembled_images/")
 
     # Set x_range and y_range as full image boundaries if they're set to None
     first_img = cv2.imread(image_path_list[0])
@@ -199,27 +217,30 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     if y_range is None:
         y_range = [0, first_img.shape[0]]
 
-    global image_list, hist_list, bin_list
-    image_list = []
+    global image_list
+    image_list = no_worm_images(image_path + "assembled_images/",
+                                np.load(image_path + "list_tracked_frame_numbers.npy"))
+
+    # global image_list, hist_list, bin_list
+    # image_list = []
     # Lists to store the histogram of each image
-    hist_list = []
-    bin_list = []
-    for i in range(start, end):
-        image = cv2.imread(image_path_list[i])
-        # image = cv2.addWeighted(image, 60, np.zeros(image.shape, image.dtype), 0, 100)
-        # image = 255*((image - min(0, np.min(image)))/np.max(image))
-        image = image[y_range[0]:y_range[1], x_range[0]:x_range[1]]
-        hist, bins = np.histogram(image, bins=1000)
-        hist_list.append(hist)
-        bin_list.append(bins)
-        image_list.append(image)
+    # hist_list = []
+    # bin_list = []
+    # for i in range(start, end):
+    #     image = cv2.imread(image_path_list[i])
+    #     # image = cv2.addWeighted(image, 60, np.zeros(image.shape, image.dtype), 0, 100)
+    #     # image = 255*((image - min(0, np.min(image)))/np.max(image))
+    #     image = image[y_range[0]:y_range[1], x_range[0]:x_range[1]]
+    #     hist, bins = np.histogram(image, bins=1000)
+    #     hist_list.append(hist)
+    #     bin_list.append(bins)
+    #     image_list.append(image)
 
     # Define figure and axes
-    global left_ax
     global middle_ax
     global right_ax
     global rightmost_ax
-    fig, [left_ax, middle_ax, right_ax, rightmost_ax] = plt.subplots(1, 4)
+    fig, [middle_ax, right_ax, rightmost_ax] = plt.subplots(1, 3)
     fig.set_size_inches(25, 5)
 
     # Define time counter (will be incremented/decremented depending on what user does)
@@ -227,21 +248,23 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     curr_time = 0
 
     # Left axis: histogram of intensity of the image, vertical line = selected pixel intensity in current frame
-    left_ax.set_yscale("log")
-    left_ax.set_title("Histogram of the current image")
-    global hist_plot
-    hist_plot = left_ax.plot(bin_list[0][0:-1], hist_list[0])
-    global selected_pixel_vertical_line
-    selected_pixel_vertical_line = left_ax.axvline(bin_list[0][1], color="darkorange")
-    global normalization_pixel_vertical_line
-    normalization_pixel_vertical_line = left_ax.axvline(bin_list[0][1], color="grey")
+    # left_ax.set_yscale("log")
+    # left_ax.set_title("Histogram of the current image")
+    # global hist_plot
+    # hist_plot = left_ax.plot(bin_list[0][0:-1], hist_list[0])
+    # global selected_pixel_vertical_line
+    # selected_pixel_vertical_line = left_ax.axvline(bin_list[0][1], color="darkorange")
+    # global normalization_pixel_vertical_line
+    # normalization_pixel_vertical_line = left_ax.axvline(bin_list[0][1], color="grey")
 
     # Middle axis: current frame of the image. Little orange star = selected pixel
     middle_ax.imshow(image_list[0])
     middle_ax.set_title("Image at current time point")
     # Selected pixel initialization: start with the middle of the image
-    image_middle_line = image_list[curr_time].shape[0]
-    image_middle_col = image_list[curr_time].shape[1]
+    image_middle_line = 2444
+    image_middle_col = 1917
+    # image_middle_line = image_list[curr_time].shape[0]
+    # image_middle_col = image_list[curr_time].shape[1]
     global selected_pixel
     selected_pixel = middle_ax.scatter([image_middle_line], [image_middle_col], color="orange", marker="s",
                                        s=analysis_size * 2, zorder=3, alpha=0.6)
@@ -253,15 +276,18 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     right_ax.set_title("Evolution of average intensity of orange / grey pixels")
     # Orange: selected pixel intensity evolution (averaged over a 20x20 square around it)
     global selected_pixel_intensities, selected_pixel_intensity_plot
-    selected_pixel_intensities = intensity_evolution(image_list, [image_middle_col - analysis_size,
-                                                                  image_middle_col + analysis_size],
-                                                     [image_middle_line - analysis_size,
-                                                      image_middle_line + analysis_size])
+    selected_pixel_intensities, is_worm_there = intensity_evolution(image_list, [image_middle_col - analysis_size,
+                                                                                 image_middle_col + analysis_size],
+                                                                    [image_middle_line - analysis_size,
+                                                                     image_middle_line + analysis_size])
     selected_pixel_intensity_plot = right_ax.plot(range(len(selected_pixel_intensities)), selected_pixel_intensities,
                                                   color="darkorange")
+    global worm_is_there_plot
+    worm_is_there_plot = right_ax.scatter([],[], color="red", s=100)
+
     # Grey: normalization pixel intensity evolution
     global normalization_pixel_intensities, normalization_pixel_intensity_plot
-    normalization_pixel_intensities = intensity_evolution(image_list, [image_middle_col - analysis_size,
+    normalization_pixel_intensities, _ = intensity_evolution(image_list, [image_middle_col - analysis_size,
                                                                        image_middle_col + analysis_size],
                                                           [image_middle_line - analysis_size,
                                                            image_middle_line + analysis_size])
@@ -272,7 +298,7 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     current_time_line_right = right_ax.axvline(curr_time, color="black")
 
     global whole_image_intensities
-    whole_image_intensities = intensity_evolution(image_list)
+    whole_image_intensities, _ = intensity_evolution(image_list)
 
     # Rightmost axis: normalized evolution of intensity (selected pixel / normalization pixel)
     rightmost_ax.set_title("Normalized intensity (orange divided by grey)")
@@ -282,14 +308,14 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     normalized_intensity_plot = rightmost_ax.plot(range(len(normalized_intensities)), normalized_intensities,
                                                   color="green")
     # Red: vertical lines indicating where the algorithm detects that there has been an intensity drop
-    # global drops_lines
-    # drops_lines = rightmost_ax.vlines([], ymin=rightmost_ax.get_ylim()[0], ymax=rightmost_ax.get_ylim()[1], color="red")
+    global drops_lines
+    drops_lines = rightmost_ax.vlines([], ymin=rightmost_ax.get_ylim()[0], ymax=rightmost_ax.get_ylim()[1], color="red")
     # Initialize the vertical line that should move depending on current time
     global current_time_line_rightmost
     current_time_line_rightmost = rightmost_ax.axvline(curr_time, color="black")
 
     # Call the update frame once to initialize the plot
-    update_frame(image_list, hist_list, bin_list, curr_time)
+    update_frame(image_list, curr_time)
 
     # Make the plot scrollable
     def scroll_event(event):
@@ -300,7 +326,7 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
             curr_time = max(0, curr_time - 1)
         else:
             return
-        update_frame(image_list, hist_list, bin_list, curr_time)
+        update_frame(image_list, curr_time)
 
     fig.canvas.mpl_connect('scroll_event', scroll_event)
 
@@ -315,7 +341,7 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
     def slider_update(val):  # val argument gives "unused" warning in PyCharm but is necessary
         global curr_time
         curr_time = int(frame_slider.val)
-        update_frame(image_list, hist_list, bin_list, curr_time)
+        update_frame(image_list, curr_time)
 
     # Slider function update call
     frame_slider.on_changed(slider_update)
@@ -331,9 +357,9 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
         global normalization_pixel
 
         # Plot objects for vertical line corresponding to intensity of selected/norm pixels, and intensity drops
-        global selected_pixel_vertical_line
-        global normalization_pixel_vertical_line
-        # global drops_lines
+        # global selected_pixel_vertical_line
+        # global normalization_pixel_vertical_line
+        global drops_lines
 
         # List of intensities already computed for selected, normalization pixels and normalized version
         global selected_pixel_intensities
@@ -345,6 +371,7 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
         global selected_pixel_intensity_plot
         global normalization_pixel_intensity_plot
         global normalized_intensity_plot
+        global worm_is_there_plot
 
         if event.button is MouseButton.LEFT and event.inaxes == middle_ax:
             # Get the mouse click position, make it integer
@@ -355,34 +382,36 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
             selected_pixel.set_offsets([curr_x, curr_y])
 
             # Update the plot of evolution of intensity of the current selected pixel, and corresponding intensity drops
-            selected_pixel_intensities = intensity_evolution(image_list, [curr_x - analysis_size,
+            selected_pixel_intensities, is_worm_there = intensity_evolution(image_list, [curr_x - analysis_size,
                                                                           curr_x + analysis_size],
                                                              [curr_y - analysis_size,
                                                               curr_y + analysis_size])
             selected_pixel_intensity_plot[0].set_data(range(len(selected_pixel_intensities)),
                                                       selected_pixel_intensities)
 
+            worm_is_there_plot.set_offsets(np.stack((np.array(range(len(selected_pixel_intensities)))[is_worm_there],
+                                               selected_pixel_intensities[is_worm_there]), axis=1))
+
             # Update the vertical line corresponding to the pixel intensity on the right axis
-            selected_pixel_vertical_line.set_xdata([selected_pixel_intensities[curr_time]])
+            # selected_pixel_vertical_line.set_xdata([selected_pixel_intensities[curr_time]])
 
             # Update the normalized plot
-            normalized_intensities = selected_pixel_intensities / normalization_pixel_intensities
-            # normalized_intensities = selected_pixel_intensities / whole_image_intensities
+            # normalized_intensities = selected_pixel_intensities / normalization_pixel_intensities
+            normalized_intensities = selected_pixel_intensities / whole_image_intensities
             normalized_intensity_plot[0].set_data(range(len(normalized_intensities)), normalized_intensities)
 
             # Update plot limits
-            print(np.min([np.min(selected_pixel_intensities), np.min(normalization_pixel_intensities)]))
-            print(np.max([np.max(selected_pixel_intensities), np.max(normalization_pixel_intensities)]))
             right_ax.set_ylim(
-                int(np.min([np.min(selected_pixel_intensities), np.min(normalization_pixel_intensities)])),
-                int(np.max([np.max(selected_pixel_intensities), np.max(normalization_pixel_intensities)])))
+                0.98 * np.min([np.min(selected_pixel_intensities), np.min(normalization_pixel_intensities)]),
+                1.02 * np.max([np.max(selected_pixel_intensities), np.max(normalization_pixel_intensities)]))
             rightmost_ax.set_ylim(np.min(normalized_intensities), np.max(normalized_intensities))
 
             #
-            # # Crappy test for identifying drops
-            # curr_intensity_drops = find_drops(selected_pixel_intensities)
-            # drops_lines.set_segments(update_vertical_line(drops_lines, curr_intensity_drops, y_min=rightmost_ax.get_ylim()[0],
-            #                          y_max=rightmost_ax.get_ylim()[1]))
+            # Crappy test for identifying drops
+            curr_intensity_drops = find_drops(selected_pixel_intensities)
+            drops_lines.set_segments(
+                update_vertical_line(drops_lines, curr_intensity_drops, y_min=rightmost_ax.get_ylim()[0],
+                                     y_max=rightmost_ax.get_ylim()[1]))
 
         elif event.button is MouseButton.RIGHT:
             # Get the mouse click position, make it integer
@@ -395,24 +424,24 @@ def interactive_intensity_plot(image_path, start, end, x_range=None, y_range=Non
             normalization_pixel.set_offsets([curr_x, curr_y])
 
             # Update the plot of evolution of intensity of the current normalization pixel
-            normalization_pixel_intensities = intensity_evolution(image_list,
+            normalization_pixel_intensities, _ = intensity_evolution(image_list,
                                                                   [curr_x - analysis_size, curr_x + analysis_size],
                                                                   [curr_y - analysis_size, curr_y + analysis_size])
             normalization_pixel_intensity_plot[0].set_data(range(len(normalization_pixel_intensities)),
                                                            normalization_pixel_intensities)
 
             # Update the vertical line corresponding to the pixel intensity on the left axis
-            normalization_pixel_vertical_line.set_xdata([normalization_pixel_intensities[curr_time]])
+            # normalization_pixel_vertical_line.set_xdata([normalization_pixel_intensities[curr_time]])
 
             # Update the normalized plot
-            normalized_intensities = selected_pixel_intensities / normalization_pixel_intensities
-            # normalized_intensities = selected_pixel_intensities / whole_image_intensities
+            # normalized_intensities = selected_pixel_intensities / normalization_pixel_intensities
+            normalized_intensities = selected_pixel_intensities / whole_image_intensities
             normalized_intensity_plot[0].set_data(range(len(normalized_intensities)), normalized_intensities)
 
             # Update plot limits
             right_ax.set_ylim(
-                int(np.min([np.min(selected_pixel_intensities), np.min(normalization_pixel_intensities)])),
-                int(np.max([np.max(selected_pixel_intensities), np.max(normalization_pixel_intensities)])))
+                0.98 * np.min([np.min(selected_pixel_intensities), np.min(normalization_pixel_intensities)]),
+                1.02 * np.max([np.max(selected_pixel_intensities), np.max(normalization_pixel_intensities)]))
             rightmost_ax.set_ylim(np.min(normalized_intensities), np.max(normalized_intensities))
 
             # Crappy test for identifying drops
@@ -445,14 +474,14 @@ def find_best_normalization(list_of_images, x_range, y_range, silhouettes):
     """
 
 
-def update_frame(list_of_images, histogram_values, bin_edges, index):
+def update_frame(list_of_images, index):
     """
     Function that is called every time the time index has to change.
     """
     global middle_ax
     global current_time_line_right
     global current_time_line_rightmost
-    global left_ax
+    # global left_ax
     global hist_plot
 
     # Shift the vertical line on the intensity plots
@@ -460,13 +489,13 @@ def update_frame(list_of_images, histogram_values, bin_edges, index):
     current_time_line_rightmost.set_xdata([index])
 
     # Plot the new histogram
-    hist_plot[0].set_data([bin_edges[index][0:-1], histogram_values[index]])
+    # hist_plot[0].set_data([bin_edges[index][0:-1], histogram_values[index]])
 
     # middle_ax.cla()
-    middle_ax.imshow(list_of_images[index], vmax=60)
+    middle_ax.imshow(list_of_images[index])
 
-    #curr_fig = plt.gcf()
-    #curr_fig.canvas.draw()
+    # curr_fig = plt.gcf()
+    # curr_fig.canvas.draw()
 
 
 if __name__ == "__main__":
