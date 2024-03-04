@@ -18,12 +18,11 @@ def track_worm(image_list):
     # List of pixel-wise tracking output for each time point
     silhouette_list = []
     erosion_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(12, 12))
-    dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(24, 24))
+    dilation_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, ksize=(12, 12))
     is_worm_tracked = [True for _ in range(len(image_list))]
     last_20_frames = 0
     for i_frame in range(len(image_list)):
-        if i_frame % 10 == 0:
-            print("Tracking frame " + str(i_frame) + " / " + str(len(image_list)))
+        print("Tracking frame " + str(i_frame) + " / " + str(len(image_list)))
         # Background subtraction: average the last 10 frames and subtract this to current frame to get the worm
 
         if i_frame == 0:  # treating frame 0 differently because there are no previous frame for subtraction
@@ -44,7 +43,7 @@ def track_worm(image_list):
         # Erode to remove the 1 or 2 pixel wide noise from the image, and dilate multiple times to make it more
         # probable that the worm is only one blob
         image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=1)
-        image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=3)
+        image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=24)
         # Find blobs: labels = matrix with the same shape as image_denoise and contains label for every point
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
 
