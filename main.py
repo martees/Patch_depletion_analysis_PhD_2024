@@ -1,5 +1,6 @@
 import useful_functions
 import script20240202_intensityevolutionin1area as intensity
+import script20240224_intensitydropanalysis as intensitydrop
 import script20240207_wormtracking as tracking
 import time
 import numpy as np
@@ -34,6 +35,5 @@ assembled_images_path = useful_functions.find_path_list(path + "assembled_images
 # intensity_evolution_1_area_where_worm_was(x, y, t, 34, 400, 500)
 # intensity_as_a_function_of_worm_distance(path + "assembled_images/", [1000, 1500], [2500, 3000], x, y, t)
 # useful_functions.interactive_worm_plot(assembled_images_path, t, x, y)
-intensity.interactive_intensity_plot(path, 0, 3000, None, None, analysis_size=10)
-
-
+intensity.interactive_intensity_plot(path, None, None, analysis_size=1)
+# intensitydrop.plot_intensity_worm_passages(path, t)
