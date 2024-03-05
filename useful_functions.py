@@ -5,6 +5,7 @@ import numpy as np
 import cv2
 import glob
 
+
 def is_linux():  # returns true if you're using linux, otherwise false
     try:
         test = os.uname()
@@ -26,7 +27,6 @@ def find_path_list(image_path, extension="*.tif"):
     return np.array(image_path_list)
 
 
-
 def interactive_worm_plot(images_paths, timestamps, centroids_x, centroids_y):
     """
     Function that shows a scrollable plot of the worm and the corresponding tracking.
@@ -43,7 +43,7 @@ def interactive_worm_plot(images_paths, timestamps, centroids_x, centroids_y):
 
     # Define time counter (will be incremented/decremented depending on what user does)
     global curr_time
-    curr_time = 0
+    curr_time = 73
 
     # Left axis: current frame of the image
     curr_frame = cv2.imread(images_paths[0], -1)
@@ -113,12 +113,15 @@ def update_frame(images_paths, list_timestamps, list_centroids_x, list_centroids
     # Update current video frame on left axis: divided by 4 because full images are named after
     # index of the first image (for now)
     left_ax.cla()
-    left_ax.imshow(cv2.imread(images_paths[index], -1), vmax=60)
+    left_ax.imshow(cv2.imread(images_paths[index], -1), vmin=30, vmax=40)
     left_ax.scatter(list_centroids_x[list_timestamps == index], list_centroids_y[list_timestamps == index], color="red", s=4)
+    left_ax.plot([2478, 2866, 2866, 2478, 2478], [1646, 1646, 1923, 1923, 1646], color="orange")
     # Update current tracking on right axis
     right_ax.cla()
     if os.path.isfile(images_paths[index][:-len(".tif")]+"_silhouette.npy"):
-        right_ax.imshow(np.load(images_paths[index][:-len(".tif")] + "_silhouette.npy"))
+        curr_silhouette = np.load(images_paths[index][:-len(".tif")] + "_silhouette.npy")
+        right_ax.imshow(curr_silhouette)
+        left_ax.imshow(curr_silhouette, alpha=0.2)
         right_ax.scatter(list_centroids_x[list_timestamps == index], list_centroids_y[list_timestamps == index],
                          color="red")
         right_ax.set_title("Current frame: " + str(index) + " (tracked)")
