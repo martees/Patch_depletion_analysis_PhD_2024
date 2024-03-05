@@ -197,10 +197,53 @@ def generate_tracking(image_path, regenerate_assembled_images=False, track_assem
     return time_stamps, list_positions_x, list_positions_y, silhouettes
 
 
-def generate_no_worm_images(image_path, x, y, t):
+def generate_no_worm_images(path, tracked_timestamps):
     """
-    Takes a path containing images
+    Takes a path to a time series of images and a time series of tracked silhouettes, and the time stamps for which we have
+    a silhouette (time stamps not in tracked_timestamps have not been tracked) (yet).
+    Returns the images in image_path but with NaN where something had been tracked. Bisous.
     """
+    print("Generating no_worm images...")
+    images_path_list = useful_functions.find_path_list(path, extension="*.tif")
+    silhouettes_path_list = useful_functions.find_path_list(path, extension="*_silhouette.npy")
+
+    # if end_time is None:
+    #     end_time = len(images_path_list)
+
+    # # Restrict everything to start and end time
+    # # There's one image per time step so just take em
+    # images_path_list = images_path_list[start_time:end_time]
+    # # Only take the silhouettes corresponding to tracked time stamps within the interval
+    # silhouettes_path_list = silhouettes_path_list[np.logical_and(tracked_timestamps < end_time, tracked_timestamps >= start_time)]
+    # tracked_timestamps = tracked_timestamps[np.logical_and(tracked_timestamps < end_time, tracked_timestamps >= start_time)]
+
+    # Load assembled images and silhouettes for tracked time points
+    print(">>> Loading silhouettes...")
+    list_of_images = [[] for _ in range(len(images_path_list))]
+    list_of_silhouettes = [[] for _ in range(len(images_path_list))]
+    for i in range(len(images_path_list)):
+        if i % 100 == 0:
+            print(">>>>>> silhouette ", i, " / ", len(images_path_list))
+        list_of_images[i] = cv2.cvtColor(cv2.imread(images_path_list[i]), cv2.COLOR_BGR2GRAY)
+        if i in tracked_timestamps:
+            list_of_silhouettes[i] = np.load(silhouettes_path_list[tracked_timestamps == i][0])
+
+    # For each tracked time step, replace blob pixels by NaNs in the images
+    print(">>> Replacing silhouettes by nans...")
+    for t in tracked_timestamps:
+        if t % 100 == 0:
+            print(">>>>>> silhouette ", t, " / ", len(images_path_list))
+        # Create a masked array where background values are 0 (so False), and blob values are not 0 (so True) => masked
+        masked = np.ma.masked_array(data=list_of_images[t].astype(np.float32), mask=list_of_silhouettes[t])
+        list_of_images[t] = masked.filled(np.nan)  # Replace masked values by NaNs
+
+    print(">>> Saving nan silhouettes...")
+    for i in range(len(list_of_images)):
+        if i % 100 == 0:
+            print(">>>>>> silhouette ", i, " / ", len(list_of_images))
+        np.save(images_path_list[i][:-len(".tif")]+"_nansilhouette.npy", list_of_images[i])
+
+    return list_of_images
 
 
 def intensity_evolution_1_area_where_worm_was(list_of_x, list_of_y, tracked_time_points, when, small_radius, big_radius):
