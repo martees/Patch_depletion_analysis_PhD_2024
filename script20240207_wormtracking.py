@@ -39,11 +39,11 @@ def track_worm(image_list):
             last_20_diff = image_list[i_frame] - last_20_frames
 
         # Threshold the highest value pixels to get the worm blob
-        _, image_thresh = cv2.threshold(last_20_diff, np.quantile(last_20_diff, 0.7), 255, cv2.THRESH_BINARY)
+        _, image_thresh = cv2.threshold(last_20_diff, np.quantile(last_20_diff, 0.6), 255, cv2.THRESH_BINARY)
         # Erode to remove the 1 or 2 pixel wide noise from the image, and dilate multiple times to make it more
         # probable that the worm is only one blob
         image_denoise = cv2.erode(image_thresh, erosion_kernel, iterations=1)
-        image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=24)
+        image_denoise = cv2.dilate(image_denoise, dilation_kernel, iterations=6)
         # Find blobs: labels = matrix with the same shape as image_denoise and contains label for every point
         num_blobs, labels, stats, centroids = cv2.connectedComponentsWithStats(image_denoise.astype(np.uint8))
 
@@ -204,8 +204,8 @@ def generate_no_worm_images(path, tracked_timestamps):
     Returns the images in image_path but with NaN where something had been tracked. Bisous.
     """
     print("Generating no_worm images...")
-    images_path_list = useful_functions.find_path_list(path, extension="*.tif")
-    silhouettes_path_list = useful_functions.find_path_list(path, extension="*_silhouette.npy")
+    images_path_list = useful_functions.find_path_list(path + "assembled_images/", extension="*.tif")
+    silhouettes_path_list = useful_functions.find_path_list(path + "assembled_images/", extension="*_silhouette.npy")
 
     # if end_time is None:
     #     end_time = len(images_path_list)

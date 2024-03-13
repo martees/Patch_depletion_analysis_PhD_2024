@@ -6,7 +6,7 @@ import time
 import numpy as np
 import os
 
-test_pipeline = False
+test_pipeline = True
 regenerate_tracking = False
 
 tic = time.time()
@@ -23,6 +23,7 @@ else:
 
 if regenerate_tracking:
     t, x, y, sil = tracking.generate_tracking(path, regenerate_assembled_images=False, track_assembled=True)
+    # Always regenerate no worm images after generating the tracking since they depend on one another
     no_worm_images = tracking.generate_no_worm_images(path, tracked_timestamps=t)
     print("Tracking over and saved, it took ", time.time() - tic, "seconds to run!")
 else:
@@ -35,6 +36,6 @@ assembled_images_path = useful_functions.find_path_list(path + "assembled_images
 
 # intensity_evolution_1_area_where_worm_was(x, y, t, 34, 400, 500)
 # intensity_as_a_function_of_worm_distance(path + "assembled_images/", [1000, 1500], [2500, 3000], x, y, t)
-useful_functions.interactive_worm_plot(assembled_images_path, t, x, y)
+# useful_functions.interactive_worm_plot(assembled_images_path, t, x, y)
 # intensity.interactive_intensity_plot(path, None, None, analysis_size=0.5)
-# intensitydrop.plot_intensity_worm_passages(path, 72, 93, t, x_range=[2478, 2866], y_range=[1646, 1923])
+intensitydrop.plot_intensity_worm_passages(path, 0, 93, t, x_range=[2478, 2866], y_range=[1646, 1923])
